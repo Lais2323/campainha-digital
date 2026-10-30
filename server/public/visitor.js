@@ -57,6 +57,7 @@
   let connectedOwnerSocketId = null;
   let selectedResident = null;
   let residentsList = [];
+  let pendingIceCandidates = [];
 
   const rtcConfig = {
     iceServers: [
@@ -132,14 +133,8 @@
             }
           });
         }
-        if (peerConnection.signalingState !== 'stable') {
-          await Promise.all([
-            peerConnection.setLocalDescription({type: "rollback"}),
-            peerConnection.setRemoteDescription(new RTCSessionDescription(offer))
-          ]);
-        } else {
-          await peerConnection.setRemoteDescription(new RTCSessionDescription(offer));
-        }
+        await peerConnection.setRemoteDescription(new RTCSessionDescription(offer));
+        flushPendingIceCandidates();
         const answer = await peerConnection.createAnswer();
         await peerConnection.setLocalDescription(answer);
         socket.emit('webrtc-answer', { doorbellId, answer, to: from });
@@ -152,6 +147,7 @@
       try {
         if (peerConnection) {
           await peerConnection.setRemoteDescription(new RTCSessionDescription(answer));
+          flushPendingIceCandidates();
         }
       } catch (err) {
         console.error('Erro na resposta WebRTC:', err);
@@ -160,13 +156,24 @@
 
     socket.on('webrtc-ice-candidate', async ({ candidate }) => {
       try {
-        if (peerConnection && candidate) {
+        if (!candidate) return;
+        if (peerConnection && peerConnection.remoteDescription) {
           await peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
+        } else {
+          pendingIceCandidates.push(candidate);
         }
       } catch (err) {
-        console.error('Erro no candidato ICE:', err);
+        console.warn('Erro no candidato ICE:', err);
       }
     });
+
+    function flushPendingIceCandidates() {
+      if (!peerConnection || !peerConnection.remoteDescription) return;
+      while (pendingIceCandidates.length > 0) {
+        const c = pendingIceCandidates.shift();
+        peerConnection.addIceCandidate(new RTCIceCandidate(c)).catch(() => {});
+      }
+    }
 
     socket.on('remote-video-state-changed', ({ isVideoActive }) => {
       if (isVideoActive) {
@@ -181,12 +188,14 @@
 
   // RENDERIZA A LISTA DE VIZINHOS / MORADORES
   function renderResidentsSelection() {
+    residentsListEl.innerHTML = '';
+
     if (!residentsList || residentsList.length === 0) {
       residentsListEl.innerHTML = `
         <div style="text-align:center; padding: 24px 12px; width: 100%;">
           <p style="color:#94a3b8; margin-bottom:16px; font-size: 0.95rem;">Toque abaixo para tocar a campainha da casa:</p>
-          <button type="button" id="btnRingGeneral" class="btn-primary" style="padding:14px 24px; font-size:1.1rem; border-radius:50px; width:100%; max-width: 300px; margin: 0 auto; display: flex; align-items: center; justify-content: center; gap: 8px;">
-            <svg style="width:20px;height:20px;" viewBox="0 0 24 24" fill="currentColor">
+          <button type="button" id="btnRingGeneral" class="btn-primary" style="padding:16px 28px; font-size:1.15rem; font-weight:700; border-radius:50px; width:100%; max-width: 300px; margin: 0 auto; display: flex; align-items: center; justify-content: center; gap: 8px; cursor: pointer;">
+            <svg style="width:22px;height:22px;" viewBox="0 0 24 24" fill="currentColor">
               <path d="M12 22c1.1 0 2-.9 2-2h-4c0 1.1.89 2 2 2zm6-6v-5c0-3.07-1.64-5.64-4.5-6.32V4c0-.83-.67-1.5-1.5-1.5s-1.5.67-1.5 1.5v.68C7.63 5.36 6 7.92 6 11v5l-2 2v1h16v-1l-2-2z"/>
             </svg>
             Tocar Campainha
@@ -202,9 +211,32 @@
       return;
     }
 
-    // Se houver apenas 1 morador, dispara a chamada diretamente sem precisar escolher!
-    if (residentsList.length === 1 && !selectedResident) {
-      triggerCallToResident(residentsList[0]);
+    if (residentsList.length === 1) {
+      const res = residentsList[0];
+      residentsListEl.innerHTML = `
+        <div style="text-align:center; padding: 20px 12px; width: 100%;">
+          <div style="margin-bottom: 18px;">
+            <div style="width: 76px; height: 76px; border-radius: 50%; background: linear-gradient(135deg, #3b82f6, #1d4ed8); display: flex; align-items: center; justify-content: center; margin: 0 auto 10px; font-size: 1.8rem; color: #fff; box-shadow: 0 8px 20px rgba(59, 130, 246, 0.35);">
+              ${res.photo ? `<img src="${res.photo}" alt="${res.name}" style="width:100%;height:100%;border-radius:50%;object-fit:cover;">` : (res.name ? res.name.charAt(0).toUpperCase() : '🏠')}
+            </div>
+            <h3 style="color:#f8fafc; font-size: 1.2rem; font-weight:700; margin: 0 0 4px 0;">${res.name}</h3>
+            <span style="display:inline-block; background:rgba(59, 130, 246, 0.15); color:#60a5fa; border:1px solid rgba(59, 130, 246, 0.3); border-radius:20px; padding:2px 12px; font-size:0.8rem; font-weight:600;">${res.unit}</span>
+          </div>
+
+          <button type="button" id="btnRingSingle" class="btn-primary" style="padding:16px 28px; font-size:1.15rem; font-weight:700; border-radius:50px; width:100%; max-width: 300px; margin: 0 auto; display: flex; align-items: center; justify-content: center; gap: 8px; cursor: pointer;">
+            <svg style="width:22px;height:22px;" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M12 22c1.1 0 2-.9 2-2h-4c0 1.1.89 2 2 2zm6-6v-5c0-3.07-1.64-5.64-4.5-6.32V4c0-.83-.67-1.5-1.5-1.5s-1.5.67-1.5 1.5v.68C7.63 5.36 6 7.92 6 11v5l-2 2v1h16v-1l-2-2z"/>
+            </svg>
+            Tocar Campainha
+          </button>
+        </div>
+      `;
+      const btn = document.getElementById('btnRingSingle');
+      if (btn) {
+        btn.onclick = () => {
+          triggerCallToResident(res);
+        };
+      }
       return;
     }
 
@@ -558,6 +590,7 @@
     isVideoEnabled = false;
     btnToggleVideo.classList.remove('video-on');
     labelVideo.textContent = 'Ativar Vídeo';
+    pendingIceCandidates = [];
   }
 
   btnCancelCall.addEventListener('click', () => {

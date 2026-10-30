@@ -305,10 +305,10 @@ app.get('/download', (req, res) => {
 // Verificação de versão atualizada
 app.get('/api/version', (req, res) => {
   res.json({
-    versionName: '2.6.0',
-    versionCode: 8,
+    versionName: '2.7.0',
+    versionCode: 9,
     downloadUrl: '/download',
-    changelog: 'Vídeo do entregador ativado por padrão junto com viva-voz'
+    changelog: 'Estabilidade total da chamada WebRTC e botão de campainha interativo'
   });
 });
 
