@@ -4,3 +4,5 @@ android/.gradle/
 android/build/
 .gradle/
 *.log
+*.sqlite
+doorbells.json
