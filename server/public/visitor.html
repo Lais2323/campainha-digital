@@ -4,10 +4,10 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>Campainha Digital</title>
-  <link rel="stylesheet" href="visitor.css">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/visitor.css">
   <script src="/socket.io/socket.io.js"></script>
 </head>
 <body>
@@ -16,11 +16,11 @@
     <!-- CABEÇALHO RESIDENCIAL -->
     <header class="header">
       <div class="badge-house">
-        <svg class="icon-house" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <svg class="icon-house" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
           <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>
           <polyline points="9 22 9 12 15 12 15 22"></polyline>
         </svg>
-        <span>CAMPAINHA DIGITAL</span>
+        <span>CAMPAINHA DIGITAL DO PORTÃO</span>
       </div>
       
       <div class="resident-info">
@@ -30,45 +30,15 @@
             <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path>
             <circle cx="12" cy="10" r="3"></circle>
           </svg>
-          <span id="addressText">Localizando endereço...</span>
+          <span id="addressText">Carregando endereço...</span>
         </p>
       </div>
     </header>
 
-    <!-- ESTADO 1: TELA INICIAL (PRONTO PARA TOCAR) -->
-    <main id="stateIdle" class="state-view active">
-      <div class="doorbell-visual">
-        <div class="pulse-ring"></div>
-        <div class="pulse-ring delay"></div>
-        <button id="btnRing" class="btn-ring" aria-label="Tocar Campainha">
-          <div class="btn-ring-inner">
-            <svg class="icon-bell" viewBox="0 0 24 24" fill="currentColor">
-              <path d="M12 22c1.1 0 2-.9 2-2h-4c0 1.1.89 2 2 2zm6-6v-5c0-3.07-1.64-5.64-4.5-6.32V4c0-.83-.67-1.5-1.5-1.5s-1.5.67-1.5 1.5v.68C7.63 5.36 6 7.92 6 11v5l-2 2v1h16v-1l-2-2z"/>
-            </svg>
-            <span class="btn-ring-text">TOCAR CAMPAINHA</span>
-          </div>
-        </button>
-      </div>
-
-      <div class="instructions-card">
-        <div class="instruction-item">
-          <div class="icon-step">1</div>
-          <p>Toque no botão para alertar o morador</p>
-        </div>
-        <div class="instruction-item">
-          <div class="icon-step">2</div>
-          <p>A chamada iniciará <strong>por voz</strong> imediatamente</p>
-        </div>
-        <div class="instruction-item">
-          <div class="icon-step">3</div>
-          <p>Você pode <strong>ativar seu vídeo</strong> no rodapé a qualquer momento</p>
-        </div>
-      </div>
-    </main>
-
-    <!-- ESTADO 2: CHAMANDO (AGUARDANDO MORADOR ATENDER) -->
-    <main id="stateCalling" class="state-view">
+    <!-- ESTADO 1: INICIANDO / CHAMANDO AUTOMATICAMENTE -->
+    <main id="stateCalling" class="state-view active">
       <div class="calling-container">
+        
         <div class="radar-box">
           <div class="radar-circle c1"></div>
           <div class="radar-circle c2"></div>
@@ -80,35 +50,54 @@
           </div>
         </div>
         
-        <h2 class="calling-title">Tocando na casa do morador...</h2>
-        <p class="calling-subtitle">Por favor, aguarde. O celular do morador está tocando.</p>
+        <div class="status-pill-calling">
+          <span class="dot-calling"></span>
+          <span>TOCANDO NO CELULAR DO MORADOR...</span>
+        </div>
+
+        <h2 class="calling-title">Chamada em Andamento</h2>
+        <p id="callingNotice" class="calling-subtitle">
+          A campainha foi <strong>acionada automaticamente</strong> ao escanear o QR Code. Aguarde o morador atender.
+        </p>
+
+        <!-- SE O NAVEGADOR BLOQUEAR ÁUDIO ATÉ O PRIMEIRO TOQUE -->
+        <button id="btnAutoStartVoice" class="btn-voice-prompt hidden">
+          <svg viewBox="0 0 24 24" fill="currentColor">
+            <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path>
+            <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
+            <line x1="12" y1="19" x2="12" y2="23"></line>
+            <line x1="8" y1="23" x2="16" y2="23"></line>
+          </svg>
+          <span>Toque aqui para ativar o microfone</span>
+        </button>
         
         <div class="calling-actions">
-          <button id="btnCancelCall" class="btn-circle btn-cancel" title="Cancelar Chamada">
+          <button id="btnCancelCall" class="btn-circle btn-cancel" title="Cancelar">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
               <line x1="18" y1="6" x2="6" y2="18"></line>
               <line x1="6" y1="6" x2="18" y2="18"></line>
             </svg>
           </button>
-          <span>Cancelar</span>
+          <span>Cancelar Chamada</span>
         </div>
+
       </div>
     </main>
 
-    <!-- ESTADO 3: CHAMADA EM ANDAMENTO -->
+    <!-- ESTADO 2: CHAMADA CONECTADA (EM ANDAMENTO) -->
     <main id="stateInCall" class="state-view">
       <div class="call-stage">
         
-        <!-- VÍDEO REMOTO (DO MORADOR) -->
+        <!-- VÍDEO DO MORADOR (REMOTO) -->
         <div id="remoteVideoContainer" class="video-container-remote hidden">
           <video id="remoteVideo" autoplay playsinline></video>
         </div>
 
-        <!-- VISUALIZADOR DE ÁUDIO (QUANDO VÍDEO ESTÁ DESATIVADO) -->
+        <!-- VISUALIZADOR DE VOZ (SOMENTE VOZ POR PADRÃO) -->
         <div id="voiceOnlyContainer" class="voice-only-stage">
           <div class="avatar-speaker">
             <div class="avatar-circle">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
                 <circle cx="12" cy="7" r="4"></circle>
               </svg>
@@ -124,30 +113,30 @@
           
           <div class="call-status-badge">
             <span class="dot-live"></span>
-            <span>CHAMADA DE VOZ ATIVA</span>
+            <span>CONVERSANDO COM O MORADOR</span>
           </div>
           <div id="callTimer" class="call-timer">00:00</div>
-          <p class="voice-notice">Você está falando com o morador</p>
+          <p class="voice-notice">Áudio ativo por padrão. Câmera desligada.</p>
         </div>
 
-        <!-- MINIATURA DO VÍDEO LOCAL (DO VISITANTE) -->
+        <!-- MINIATURA DA CÂMERA DO ENTREGADOR (LOCAL) -->
         <div id="localVideoContainer" class="video-container-local hidden">
           <video id="localVideo" autoplay playsinline muted></video>
         </div>
 
       </div>
 
-      <!-- ÁUDIO REMOTO (ELEMENTO OCULTO PARA TOCAR O SOM) -->
+      <!-- ÁUDIO DO MORADOR -->
       <audio id="remoteAudio" autoplay></audio>
 
-      <!-- RODA-PÉ DA CHAMADA (CONTROLES ESSENCIAIS) -->
+      <!-- RODA-PÉ DA CHAMADA (CONTROLES OBRIGATÓRIOS) -->
       <footer class="call-footer">
         <div class="footer-controls">
           
-          <!-- BOTÃO 1: MUTAR/DESMUTAR MICROFONE -->
+          <!-- MUTAR MICROFONE -->
           <button id="btnToggleMic" class="ctrl-btn active" title="Microfone">
             <div class="ctrl-icon-box">
-              <svg class="icon-mic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <svg class="icon-mic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path>
                 <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
                 <line x1="12" y1="19" x2="12" y2="23"></line>
@@ -157,10 +146,10 @@
             <span id="labelMic">Voz Ativa</span>
           </button>
 
-          <!-- BOTÃO 2: ATIVAR/DESATIVAR VÍDEO (REQUISITO FUNDAMENTAL) -->
-          <button id="btnToggleVideo" class="ctrl-btn btn-video" title="Ativar Vídeo">
+          <!-- BOTAO NO RODA-PE: ATIVAR VIDEO SE NECESSARIO -->
+          <button id="btnToggleVideo" class="ctrl-btn btn-video" title="Ligar Vídeo">
             <div class="ctrl-icon-box">
-              <svg class="icon-cam" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <svg class="icon-cam" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <polygon points="23 7 16 12 23 17 23 7"></polygon>
                 <rect x="1" y="5" width="15" height="14" rx="2" ry="2"></rect>
               </svg>
@@ -168,8 +157,8 @@
             <span id="labelVideo">Ativar Vídeo</span>
           </button>
 
-          <!-- BOTÃO 3: ENCERRAR CHAMADA -->
-          <button id="btnEndCall" class="ctrl-btn btn-hangup" title="Encerrar">
+          <!-- ENCERRAR -->
+          <button id="btnEndCall" class="ctrl-btn btn-hangup" title="Desligar">
             <div class="ctrl-icon-box hangup-box">
               <svg viewBox="0 0 24 24" fill="currentColor">
                 <path d="M12 9c-1.6 0-3.15.25-4.6.72v3.1c0 .39-.23.74-.56.9-.98.49-1.87 1.12-2.66 1.85-.18.18-.43.28-.7.28-.28 0-.53-.11-.71-.29L.29 13.08c-.18-.17-.29-.42-.29-.7 0-.28.11-.53.29-.71C3.34 8.78 7.46 7 12 7s8.66 1.78 11.71 4.67c.18.18.29.43.29.71 0 .28-.11.53-.29.71l-2.48 2.48c-.18.18-.43.29-.71.29-.27 0-.52-.11-.7-.28-.79-.74-1.69-1.36-2.67-1.85-.33-.16-.56-.5-.56-.9v-3.1C15.15 9.25 13.6 9 12 9z"/>
@@ -182,22 +171,22 @@
       </footer>
     </main>
 
-    <!-- ESTADO 4: CHAMADA ENCERRADA OU RECUSADA -->
+    <!-- ESTADO 3: FINALIZADA -->
     <main id="stateEnded" class="state-view">
       <div class="ended-card">
         <div class="ended-icon">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
             <polyline points="20 6 9 17 4 12"></polyline>
           </svg>
         </div>
         <h2 id="endedTitle">Chamada Finalizada</h2>
-        <p id="endedDesc">Obrigado pela visita ou entrega!</p>
+        <p id="endedDesc">Obrigado pela entrega ou visita!</p>
         <button id="btnRestart" class="btn-restart">Tocar Novamente</button>
       </div>
     </main>
 
   </div>
 
-  <script src="visitor.js"></script>
+  <script src="/visitor.js"></script>
 </body>
 </html>

@@ -137,7 +137,11 @@ app.get('/api/qr/:id', async (req, res) => {
 });
 
 // Rota para o entregador acessar: /campainha/:id
-app.get('/campainha/:id', (req, res) => {
+app.get('/campainha/:id', (req, res, next) => {
+  // Ignora se for arquivo estático com extensão (.css, .js, .png, etc)
+  if (req.params.id && req.params.id.includes('.')) {
+    return next();
+  }
   res.sendFile(path.join(__dirname, 'public', 'visitor.html'));
 });
 
