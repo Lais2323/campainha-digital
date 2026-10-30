@@ -208,10 +208,10 @@ app.get('/download', (req, res) => {
 // Verificação de versão atualizada
 app.get('/api/version', (req, res) => {
   res.json({
-    versionName: '1.3.0',
-    versionCode: 3,
+    versionName: '2.0.0',
+    versionCode: 2,
     downloadUrl: '/download',
-    changelog: 'Suporte a vizinhos, autenticação por código seguro, foto de perfil e viva-voz'
+    changelog: 'Suporte a vizinhos, autenticação por código seguro, foto de perfil, viva-voz e atualizador direto no app'
   });
 });
 
