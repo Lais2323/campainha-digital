@@ -305,10 +305,10 @@ app.get('/download', (req, res) => {
 // Verificação de versão atualizada
 app.get('/api/version', (req, res) => {
   res.json({
-    versionName: '2.4.0',
-    versionCode: 6,
+    versionName: '2.5.0',
+    versionCode: 7,
     downloadUrl: '/download',
-    changelog: 'Gravação de chamadas para Admin, execução em 2º plano aprimorada, botão de voltar nativo e perfis persistentes'
+    changelog: 'Correção crítica de validação do login, suporte à tecla Enter e estabilidade da autenticação'
   });
 });
 
