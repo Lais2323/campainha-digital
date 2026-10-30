@@ -247,6 +247,34 @@ app.post('/api/doorbell/:id/residents', (req, res) => {
   res.json({ success: true, residents: updatedList });
 });
 
+// Atualização de Perfil pelo próprio Morador (Foto, Nome)
+app.post('/api/user/profile', (req, res) => {
+  const { id, name, unit, photo, code } = req.body;
+  if (!id || !name) {
+    return res.status(400).json({ error: 'ID e Nome são obrigatórios.' });
+  }
+
+  const existing = Database.findUserById(id) || Database.findUserByCode(code);
+  if (!existing) {
+    return res.status(404).json({ error: 'Usuário não encontrado.' });
+  }
+
+  const updatedUnit = (existing.role === 'admin') ? (unit || existing.unit) : existing.unit;
+  const savedUser = Database.saveUser({
+    id: existing.id,
+    name: name.trim(),
+    unit: updatedUnit,
+    photo: (photo !== undefined && photo !== null) ? photo : existing.photo,
+    role: existing.role,
+    access_code: existing.access_code || code,
+    email: existing.email
+  });
+
+  const all = Database.getAllUsers();
+  io.to('doorbell:minha-casa').emit('residents-updated', all);
+  res.json({ success: true, user: savedUser });
+});
+
 // Compatibilidade: Excluir Morador
 app.post('/api/doorbell/:id/residents/delete', (req, res) => {
   const { residentId, adminCode } = req.body;
@@ -277,10 +305,10 @@ app.get('/download', (req, res) => {
 // Verificação de versão atualizada
 app.get('/api/version', (req, res) => {
   res.json({
-    versionName: '2.3.0',
-    versionCode: 5,
+    versionName: '2.4.0',
+    versionCode: 6,
     downloadUrl: '/download',
-    changelog: 'Sessão persistente (login mantido), tela de login limpa e configuração do servidor exclusiva da Administradora'
+    changelog: 'Gravação de chamadas para Admin, execução em 2º plano aprimorada, botão de voltar nativo e perfis persistentes'
   });
 });
 
