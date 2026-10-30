@@ -15,11 +15,7 @@ const io = new Server(server, {
   cors: {
     origin: '*',
     methods: ['GET', 'POST']
-  },
-  transports: ['websocket', 'polling'],
-  pingInterval: 10000,
-  pingTimeout: 20000,
-  allowEIO3: true
+  }
 });
 
 const PORT = process.env.PORT || 3000;
@@ -309,10 +305,10 @@ app.get('/download', (req, res) => {
 // Verificação de versão atualizada
 app.get('/api/version', (req, res) => {
   res.json({
-    versionName: '3.0.0',
-    versionCode: 12,
+    versionName: '2.5.0',
+    versionCode: 7,
     downloadUrl: '/download',
-    changelog: 'Otimização anti-duplicação de chamadas e estabilidade total no receptor'
+    changelog: 'Correção de inicialização, conexão offline garantida e estabilidade da campainha'
   });
 });
 
@@ -384,29 +380,9 @@ io.on('connection', (socket) => {
       isAdmin: socket.role === 'admin'
     });
 
-    // Se o morador enviou perfil com foto/nome atualizado do app, sincroniza no banco e atualiza a campainha!
-    if (resident && resident.name) {
-      try {
-        const existing = (resident.id && Database.findUserById(resident.id)) || 
-                         (resident.code && Database.findUserByCode(resident.code)) || 
-                         (resident.role === 'admin' && Database.findUserByCode(MASTER_ACCESS_CODE));
-        if (existing) {
-          Database.saveUser({
-            ...existing,
-            name: resident.name,
-            unit: resident.unit || existing.unit,
-            photo: (resident.photo !== undefined && resident.photo !== null && resident.photo !== '') ? resident.photo : existing.photo
-          });
-        }
-      } catch (e) {
-        console.warn('Erro ao sincronizar perfil do morador no registro:', e);
-      }
-    }
-
     const config = Database.getDoorbellConfig(doorbellId);
     const residents = Database.getAllUsers();
     socket.emit('registered', { role: 'resident', config: { ...config, residents } });
-    io.to(`doorbell:${doorbellId}`).emit('residents-updated', residents);
     console.log(`[Morador Registrado] ${resident ? resident.name : 'Anônimo'} (${resident ? resident.unit : 'Geral'}) [Cargo: ${socket.role}] | ID: ${doorbellId}`);
   });
 
@@ -428,45 +404,28 @@ io.on('connection', (socket) => {
   });
 
   // Entregador toca para um Morador/Unidade específico
-  socket.on('ring-doorbell', ({ doorbellId, targetUnit, targetResidentId, targetRole, targetName, visitorInfo }) => {
+  socket.on('ring-doorbell', ({ doorbellId, targetUnit, targetResidentId, visitorInfo }) => {
     doorbellId = doorbellId || 'minha-casa';
-    console.log(`[🔔 CAMPAINHA TOCANDO] Destino: ${targetUnit || 'Geral'} (${targetName || ''}) em ${doorbellId}`);
+    console.log(`[🔔 CAMPAINHA TOCANDO] Destino: ${targetUnit || 'Geral'} em ${doorbellId}`);
 
     const callPayload = {
       from: socket.id,
       doorbellId,
       targetUnit: targetUnit || null,
       targetResidentId: targetResidentId || null,
-      targetRole: targetRole || null,
-      targetName: targetName || null,
       timestamp: Date.now(),
       visitorInfo: visitorInfo || {}
     };
 
-    // Coleta sockets únicos de moradores para NUNCA duplicar o evento
-    const targetSockets = new Set();
+    // 1. SEMPRE envia para a sala geral da campainha para NUNCA perder chamada
+    socket.to(`doorbell:${doorbellId}`).emit('incoming-call', callPayload);
 
-    // 1. Moradores conectados registrados
-    connectedResidents.forEach((res, residentSocketId) => {
-      if (residentSocketId !== socket.id) {
-        targetSockets.add(residentSocketId);
-      }
-    });
-
-    // 2. Sockets na sala geral da campainha
-    const room = io.sockets.adapter.rooms.get(`doorbell:${doorbellId}`);
-    if (room) {
-      room.forEach(sId => {
-        if (sId !== socket.id) {
-          targetSockets.add(sId);
-        }
-      });
+    // 2. Se houver unidade específica, dispara também diretamente para as variações de sala da unidade
+    if (targetUnit) {
+      io.to(`unit:${doorbellId}:${targetUnit}`).emit('incoming-call', callPayload);
+      io.to(`unit:${doorbellId}:${targetUnit.trim()}`).emit('incoming-call', callPayload);
+      io.to(`unit:${doorbellId}:${targetUnit.trim().toLowerCase()}`).emit('incoming-call', callPayload);
     }
-
-    // 3. Dispara exatamente UMA VEZ para cada aparelho de morador
-    targetSockets.forEach(targetSocketId => {
-      io.to(targetSocketId).emit('incoming-call', callPayload);
-    });
 
     socket.emit('ringing-started', { timestamp: Date.now() });
   });

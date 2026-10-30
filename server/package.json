@@ -3,7 +3,6 @@
   "version": "1.0.0",
   "description": "Servidor de Sinalizacao WebRTC e Pagina Web da Campainha Digital",
   "main": "server.js",
-  "license": "MIT",
   "scripts": {
     "start": "node server.js"
   },
