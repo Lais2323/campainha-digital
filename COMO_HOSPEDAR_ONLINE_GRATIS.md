@@ -19,22 +19,22 @@ O **[Render.com](https://render.com)** é uma plataforma de nuvem que permite ro
      *(Se preferir, crie um repositório no seu GitHub com a pasta `server` e selecione-o no Render)*.
 
 3. **Configure as opções básicas no formulário**:
-   - **Name**: `minha-campainha-residencial` (ou o nome que preferir).
+   - **Name**: `campainha-digital`.
    - **Language / Environment**: `Node`.
-   - **Build Command**: `cd server && npm install` (ou apenas `npm install`).
-   - **Start Command**: `cd server && node server.js` (ou `node server.js`).
+   - **Build Command**: `yarn install` (ou `npm install`).
+   - **Start Command**: `node server/server.js`.
    - **Instance Type**: Escolha **Free ($0/month)**.
 
 4. **Clique em "Deploy Web Service"**:
    - O Render vai inicializar o servidor em cerca de 1 minuto.
    - No topo da tela, você verá a sua URL segura oficial com cadeado HTTPS, por exemplo:
-     👉 **`https://minha-campainha-residencial.onrender.com`**
+     👉 **`https://campainha-digital.onrender.com`**
 
 5. **Coloque a URL no seu App Android**:
    - Abra o app no seu celular.
-   - Vá em **"Configurar Endereço"**.
+   - Vá em **"Configurações"**.
    - No campo **"URL do Servidor na Nuvem"**, cole o seu link:
-     `https://minha-campainha-residencial.onrender.com`
+     `https://campainha-digital.onrender.com`
    - Toque em **"Testar Conexão com Servidor"** (vai aparecer: *✅ Servidor Online & Conectado!*).
    - Toque em **"Salvar Configurações"**.
 
