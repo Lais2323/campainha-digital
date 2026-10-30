@@ -208,10 +208,10 @@ app.get('/download', (req, res) => {
 // Verificação de versão atualizada
 app.get('/api/version', (req, res) => {
   res.json({
-    versionName: '2.0.0',
-    versionCode: 2,
+    versionName: '2.1.0',
+    versionCode: 3,
     downloadUrl: '/download',
-    changelog: 'Suporte a vizinhos, autenticação por código seguro, foto de perfil, viva-voz e atualizador direto no app'
+    changelog: 'Conexão em tempo real aprimorada, recebimento garantido de chamadas e viva-voz'
   });
 });
 
@@ -261,31 +261,35 @@ io.on('connection', (socket) => {
 
   // Registro de Morador / Vizinho autenticado pelo código
   socket.on('register-resident', ({ doorbellId, resident }) => {
+    doorbellId = doorbellId || 'minha-casa';
     socket.doorbellId = doorbellId;
     socket.resident = resident;
     socket.role = 'resident';
     socket.join(`doorbell:${doorbellId}`);
-    // Entra na sala específica da sua casa/unidade (Ex: unit:Casa 1)
+
     if (resident && resident.unit) {
       socket.join(`unit:${doorbellId}:${resident.unit}`);
+      socket.join(`unit:${doorbellId}:${resident.unit.trim()}`);
+      socket.join(`unit:${doorbellId}:${resident.unit.trim().toLowerCase()}`);
     }
 
     connectedResidents.set(socket.id, {
       socketId: socket.id,
       doorbellId,
-      residentId: resident.id,
-      unit: resident.unit,
-      name: resident.name,
-      isAdmin: resident.isAdmin
+      residentId: resident ? resident.id : null,
+      unit: resident ? resident.unit : null,
+      name: resident ? resident.name : null,
+      isAdmin: resident ? resident.isAdmin : false
     });
 
     const config = getOrCreateDoorbell(doorbellId);
     socket.emit('registered', { role: 'resident', config });
-    console.log(`[Morador Registrado] ${resident.name} (${resident.unit}) | ID: ${doorbellId}`);
+    console.log(`[Morador Registrado] ${resident ? resident.name : 'Anônimo'} (${resident ? resident.unit : 'Sem Unidade'}) | ID: ${doorbellId}`);
   });
 
   // Registro do Entregador/Visitante
   socket.on('register-visitor', ({ doorbellId }) => {
+    doorbellId = doorbellId || 'minha-casa';
     socket.doorbellId = doorbellId;
     socket.role = 'visitor';
     socket.join(`doorbell:${doorbellId}`);
@@ -301,22 +305,26 @@ io.on('connection', (socket) => {
 
   // Entregador toca para um Morador/Unidade específico
   socket.on('ring-doorbell', ({ doorbellId, targetUnit, targetResidentId, visitorInfo }) => {
+    doorbellId = doorbellId || 'minha-casa';
     console.log(`[🔔 CAMPAINHA TOCANDO] Destino: ${targetUnit || 'Geral'} em ${doorbellId}`);
 
     const callPayload = {
       from: socket.id,
       doorbellId,
-      targetUnit,
+      targetUnit: targetUnit || null,
+      targetResidentId: targetResidentId || null,
       timestamp: Date.now(),
       visitorInfo: visitorInfo || {}
     };
 
+    // 1. SEMPRE envia para a sala geral da campainha (o app do morador decide se toca nele)
+    socket.to(`doorbell:${doorbellId}`).emit('incoming-call', callPayload);
+
+    // 2. Se houver unidade específica, dispara também diretamente para as variações de sala da unidade
     if (targetUnit) {
-      // TOCA APENAS NO CELULAR DO MORADOR DAQUELA UNIDADE ESPECÍFICA!
       io.to(`unit:${doorbellId}:${targetUnit}`).emit('incoming-call', callPayload);
-    } else {
-      // Toca em todos
-      socket.to(`doorbell:${doorbellId}`).emit('incoming-call', callPayload);
+      io.to(`unit:${doorbellId}:${targetUnit.trim()}`).emit('incoming-call', callPayload);
+      io.to(`unit:${doorbellId}:${targetUnit.trim().toLowerCase()}`).emit('incoming-call', callPayload);
     }
 
     socket.emit('ringing-started', { timestamp: Date.now() });

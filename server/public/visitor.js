@@ -167,7 +167,23 @@
   // RENDERIZA A LISTA DE VIZINHOS / MORADORES
   function renderResidentsSelection() {
     if (!residentsList || residentsList.length === 0) {
-      residentsListEl.innerHTML = '<div class="loading-residents">Nenhum morador registrado ainda.</div>';
+      residentsListEl.innerHTML = `
+        <div style="text-align:center; padding: 24px 12px; width: 100%;">
+          <p style="color:#94a3b8; margin-bottom:16px; font-size: 0.95rem;">Toque abaixo para tocar a campainha da casa:</p>
+          <button type="button" id="btnRingGeneral" class="btn-primary" style="padding:14px 24px; font-size:1.1rem; border-radius:50px; width:100%; max-width: 300px; margin: 0 auto; display: flex; align-items: center; justify-content: center; gap: 8px;">
+            <svg style="width:20px;height:20px;" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M12 22c1.1 0 2-.9 2-2h-4c0 1.1.89 2 2 2zm6-6v-5c0-3.07-1.64-5.64-4.5-6.32V4c0-.83-.67-1.5-1.5-1.5s-1.5.67-1.5 1.5v.68C7.63 5.36 6 7.92 6 11v5l-2 2v1h16v-1l-2-2z"/>
+            </svg>
+            Tocar Campainha
+          </button>
+        </div>
+      `;
+      const btn = document.getElementById('btnRingGeneral');
+      if (btn) {
+        btn.onclick = () => {
+          triggerCallToResident({ id: 'geral', name: 'Residência', unit: 'Casa 1' });
+        };
+      }
       return;
     }
 
