@@ -67,7 +67,12 @@
   };
 
   function initSocket() {
-    socket = io();
+    socket = io({
+      transports: ['websocket', 'polling'],
+      reconnection: true,
+      reconnectionDelay: 2500,
+      timeout: 20000
+    });
 
     socket.on('connect', () => {
       console.log('Conectado ao servidor de campainha!');

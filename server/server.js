@@ -15,7 +15,11 @@ const io = new Server(server, {
   cors: {
     origin: '*',
     methods: ['GET', 'POST']
-  }
+  },
+  transports: ['websocket', 'polling'],
+  pingInterval: 10000,
+  pingTimeout: 20000,
+  allowEIO3: true
 });
 
 const PORT = process.env.PORT || 3000;
@@ -305,10 +309,10 @@ app.get('/download', (req, res) => {
 // Verificação de versão atualizada
 app.get('/api/version', (req, res) => {
   res.json({
-    versionName: '2.7.0',
-    versionCode: 9,
+    versionName: '2.8.0',
+    versionCode: 10,
     downloadUrl: '/download',
-    changelog: 'Estabilidade total da chamada WebRTC e botão de campainha interativo'
+    changelog: 'Estabilidade anti-desconexão contínua do Socket.io'
   });
 });
 
