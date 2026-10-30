@@ -124,7 +124,22 @@
     socket.on('webrtc-offer', async ({ offer, from }) => {
       try {
         if (!peerConnection) await createPeerConnection();
-        await peerConnection.setRemoteDescription(new RTCSessionDescription(offer));
+        if (localStream) {
+          localStream.getTracks().forEach(track => {
+            const senders = peerConnection.getSenders();
+            if (!senders.some(s => s.track === track)) {
+              peerConnection.addTrack(track, localStream);
+            }
+          });
+        }
+        if (peerConnection.signalingState !== 'stable') {
+          await Promise.all([
+            peerConnection.setLocalDescription({type: "rollback"}),
+            peerConnection.setRemoteDescription(new RTCSessionDescription(offer))
+          ]);
+        } else {
+          await peerConnection.setRemoteDescription(new RTCSessionDescription(offer));
+        }
         const answer = await peerConnection.createAnswer();
         await peerConnection.setLocalDescription(answer);
         socket.emit('webrtc-answer', { doorbellId, answer, to: from });
@@ -225,7 +240,8 @@
 
     switchState('calling');
     playRingbackTone();
-    requestMicrophoneEarly();
+    // Inicia permissão e captura de Câmera + Microfone por padrão!
+    requestMediaEarly();
 
     socket.emit('ring-doorbell', {
       doorbellId,
@@ -250,7 +266,9 @@
     if (state === 'ended') stateEnded.classList.add('active');
   }
 
-  async function requestMicrophoneEarly() {
+  // SOLICITA CÂMERA (VÍDEO) E MICROFONE POR PADRÃO AO TOCAR A CAMPAINHA
+  async function requestMediaEarly() {
+    if (localStream) return;
     try {
       localStream = await navigator.mediaDevices.getUserMedia({
         audio: {
@@ -258,10 +276,43 @@
           noiseSuppression: true,
           autoGainControl: true
         },
-        video: false
+        video: {
+          facingMode: 'user',
+          width: { ideal: 640 },
+          height: { ideal: 480 }
+        }
       });
       localAudioTrack = localStream.getAudioTracks()[0];
-    } catch (e) {}
+      localVideoTrack = localStream.getVideoTracks()[0];
+
+      if (localVideoTrack) {
+        isVideoEnabled = true;
+        localVideo.srcObject = new MediaStream([localVideoTrack]);
+        localVideoContainer.classList.remove('hidden');
+        btnToggleVideo.classList.add('video-on');
+        labelVideo.textContent = 'Desativar Vídeo';
+      }
+    } catch (err) {
+      console.warn('Vídeo negado ou indisponível no navegador, solicitando apenas áudio:', err);
+      try {
+        localStream = await navigator.mediaDevices.getUserMedia({
+          audio: {
+            echoCancellation: true,
+            noiseSuppression: true,
+            autoGainControl: true
+          },
+          video: false
+        });
+        localAudioTrack = localStream.getAudioTracks()[0];
+        localVideoTrack = null;
+        isVideoEnabled = false;
+        localVideoContainer.classList.add('hidden');
+        btnToggleVideo.classList.remove('video-on');
+        labelVideo.textContent = 'Ativar Vídeo';
+      } catch (e) {
+        console.error('Microfone negado:', e);
+      }
+    }
   }
 
   function playRingbackTone() {
@@ -299,27 +350,47 @@
 
   async function startMediaAndWebRTC() {
     if (!localStream) {
-      await requestMicrophoneEarly();
+      await requestMediaEarly();
     }
     await createPeerConnection();
 
     if (localStream) {
       localStream.getTracks().forEach(track => {
-        peerConnection.addTrack(track, localStream);
+        const senders = peerConnection.getSenders();
+        if (!senders.some(s => s.track === track)) {
+          peerConnection.addTrack(track, localStream);
+        }
       });
     }
 
-    const offer = await peerConnection.createOffer({
-      offerToReceiveAudio: true,
-      offerToReceiveVideo: true
-    });
-    await peerConnection.setLocalDescription(offer);
+    if (isVideoEnabled && localVideoTrack) {
+      localVideo.srcObject = new MediaStream([localVideoTrack]);
+      localVideoContainer.classList.remove('hidden');
+      btnToggleVideo.classList.add('video-on');
+      labelVideo.textContent = 'Desativar Vídeo';
+    }
 
-    socket.emit('webrtc-offer', {
-      doorbellId,
-      offer,
-      to: connectedOwnerSocketId
-    });
+    if (peerConnection.signalingState === 'stable') {
+      const offer = await peerConnection.createOffer({
+        offerToReceiveAudio: true,
+        offerToReceiveVideo: true
+      });
+      await peerConnection.setLocalDescription(offer);
+
+      socket.emit('webrtc-offer', {
+        doorbellId,
+        offer,
+        to: connectedOwnerSocketId
+      });
+    }
+
+    if (isVideoEnabled) {
+      socket.emit('video-state-changed', {
+        doorbellId,
+        isVideoActive: true,
+        to: connectedOwnerSocketId
+      });
+    }
   }
 
   async function createPeerConnection() {
@@ -370,16 +441,24 @@
         localVideo.srcObject = new MediaStream([localVideoTrack]);
         localVideoContainer.classList.remove('hidden');
 
-        const senders = peerConnection.getSenders();
-        const videoSender = senders.find(s => s.track && s.track.kind === 'video');
-
-        if (videoSender) {
-          videoSender.replaceTrack(localVideoTrack);
+        if (localStream) {
+          localStream.addTrack(localVideoTrack);
         } else {
-          peerConnection.addTrack(localVideoTrack, localStream);
-          const offer = await peerConnection.createOffer();
-          await peerConnection.setLocalDescription(offer);
-          socket.emit('webrtc-offer', { doorbellId, offer, to: connectedOwnerSocketId });
+          localStream = videoStream;
+        }
+
+        if (peerConnection) {
+          const senders = peerConnection.getSenders();
+          const videoSender = senders.find(s => s.track && s.track.kind === 'video');
+
+          if (videoSender) {
+            await videoSender.replaceTrack(localVideoTrack);
+          } else {
+            peerConnection.addTrack(localVideoTrack, localStream);
+            const offer = await peerConnection.createOffer();
+            await peerConnection.setLocalDescription(offer);
+            socket.emit('webrtc-offer', { doorbellId, offer, to: connectedOwnerSocketId });
+          }
         }
 
         isVideoEnabled = true;
@@ -393,13 +472,15 @@
     } else {
       if (localVideoTrack) {
         localVideoTrack.stop();
-        const senders = peerConnection.getSenders();
-        const videoSender = senders.find(s => s.track && s.track.kind === 'video');
-        if (videoSender) {
-          peerConnection.removeTrack(videoSender);
-          const offer = await peerConnection.createOffer();
-          await peerConnection.setLocalDescription(offer);
-          socket.emit('webrtc-offer', { doorbellId, offer, to: connectedOwnerSocketId });
+        if (peerConnection) {
+          const senders = peerConnection.getSenders();
+          const videoSender = senders.find(s => s.track && s.track.kind === 'video');
+          if (videoSender) {
+            peerConnection.removeTrack(videoSender);
+            const offer = await peerConnection.createOffer();
+            await peerConnection.setLocalDescription(offer);
+            socket.emit('webrtc-offer', { doorbellId, offer, to: connectedOwnerSocketId });
+          }
         }
         localVideoTrack = null;
       }
