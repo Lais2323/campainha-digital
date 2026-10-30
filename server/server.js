@@ -277,10 +277,10 @@ app.get('/download', (req, res) => {
 // Verificação de versão atualizada
 app.get('/api/version', (req, res) => {
   res.json({
-    versionName: '2.2.0',
-    versionCode: 4,
+    versionName: '2.3.0',
+    versionCode: 5,
     downloadUrl: '/download',
-    changelog: 'Sistema RBAC com Administradora, convites por e-mail e banco de dados SQLite'
+    changelog: 'Sessão persistente (login mantido), tela de login limpa e configuração do servidor exclusiva da Administradora'
   });
 });
 
