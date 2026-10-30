@@ -1,0 +1,19 @@
+{
+  "name": "campainha-digital",
+  "version": "1.0.0",
+  "description": "Campainha Digital Residencial com QR Code, Voz e Vídeo WebRTC",
+  "main": "server/server.js",
+  "scripts": {
+    "start": "node server/server.js",
+    "build": "cd server && npm install"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "express": "^4.19.2",
+    "qrcode": "^1.5.3",
+    "socket.io": "^4.7.5"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
