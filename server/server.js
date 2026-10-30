@@ -6,6 +6,7 @@ const path = require('path');
 const fs = require('fs');
 const QRCode = require('qrcode');
 const os = require('os');
+const Database = require('./database');
 
 const app = express();
 app.set('trust proxy', 1);
@@ -18,184 +19,252 @@ const io = new Server(server, {
 });
 
 const PORT = process.env.PORT || 3000;
-const DATA_FILE = path.join(__dirname, 'doorbells.json');
 const MASTER_ACCESS_CODE = '960499622@@';
-
-// Carregar dados salvos das campainhas
-let doorbells = {};
-if (fs.existsSync(DATA_FILE)) {
-  try {
-    doorbells = JSON.parse(fs.readFileSync(DATA_FILE, 'utf8'));
-  } catch (err) {
-    console.error('Erro ao ler doorbells.json:', err);
-    doorbells = {};
-  }
-}
-
-function saveDoorbells() {
-  try {
-    fs.writeFileSync(DATA_FILE, JSON.stringify(doorbells, null, 2), 'utf8');
-  } catch (err) {
-    console.error('Erro ao salvar doorbells.json:', err);
-  }
-}
-
-// Retorna ou cria a campainha padrao se nao existir
-function getOrCreateDoorbell(id) {
-  if (!doorbells[id]) {
-    doorbells[id] = {
-      id: id,
-      title: 'Vila / Condomínio Residencial',
-      address: 'Rua Principal, 123',
-      welcomeMessage: 'Selecione quem você deseja chamar:',
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-      // Lista de moradores / vizinhos / unidades cadastradas
-      residents: [
-        {
-          id: 'admin_1',
-          name: 'Carlos (Proprietário)',
-          unit: 'Casa 1',
-          photo: '',
-          isAdmin: true,
-          code: MASTER_ACCESS_CODE,
-          createdAt: new Date().toISOString()
-        }
-      ]
-    };
-    saveDoorbells();
-  }
-  return doorbells[id];
-}
 
 // Middleware
 app.use(cors());
 app.use(express.json({ limit: '10mb' }));
 app.use(express.static(path.join(__dirname, 'public')));
 
-// Rota para obter os IPs da rede local
-app.get('/api/network-info', (req, res) => {
+// Descobrir IPs locais para depuração
+app.get('/api/network', (req, res) => {
   const interfaces = os.networkInterfaces();
   const addresses = [];
-  for (const name of Object.keys(interfaces)) {
-    for (const net of interfaces[name]) {
-      if (net.family === 'IPv4' && !net.internal) {
-        addresses.push(net.address);
+  for (const k in interfaces) {
+    for (const k2 in interfaces[k]) {
+      const address = interfaces[k][k2];
+      if (address.family === 'IPv4' && !address.internal) {
+        addresses.push(address.address);
       }
     }
   }
   res.json({ ips: addresses, port: PORT });
 });
 
-// Validar código de autenticação
+// ==================== ROTAS DE AUTENTICAÇÃO E RBAC ====================
+
+// 1. Verificação de Código de Acesso (Administradora, Usuário ou Convite)
 app.post('/api/auth/verify-code', (req, res) => {
-  const { code, doorbellId } = req.body;
-  const current = getOrCreateDoorbell(doorbellId || 'minha-casa');
-  
-  if (code === MASTER_ACCESS_CODE) {
-    return res.json({ 
-      success: true, 
-      isAdmin: true, 
-      message: 'Código de Administrador Mestre aceito!' 
+  const { code } = req.body;
+  if (!code) {
+    return res.status(400).json({ success: false, error: 'Código de acesso não fornecido.' });
+  }
+
+  const cleanCode = code.trim();
+
+  // Verifica se é a Administradora (pelo código mestre)
+  if (cleanCode === MASTER_ACCESS_CODE) {
+    const adminUser = Database.findUserByCode(MASTER_ACCESS_CODE);
+    return res.json({
+      success: true,
+      type: 'user',
+      role: 'admin',
+      user: adminUser
     });
   }
 
-  // Verifica se é código de um vizinho / morador adicionado
-  const resident = current.residents.find(r => r.code === code);
-  if (resident) {
-    return res.json({ 
-      success: true, 
-      isAdmin: false, 
-      resident: resident,
-      message: 'Código de Morador aceito!' 
+  // Verifica se é um usuário já existente no banco de dados SQLite
+  const existingUser = Database.findUserByCode(cleanCode);
+  if (existingUser) {
+    return res.json({
+      success: true,
+      type: 'user',
+      role: existingUser.role, // 'admin' ou 'user'
+      user: existingUser
     });
   }
 
-  return res.status(401).json({ 
-    success: false, 
-    message: 'Código incorreto. Digite o código de acesso válido.' 
+  // Verifica se é um convite pendente para Usuário Padrão
+  const invite = Database.getInviteByCode(cleanCode);
+  if (invite) {
+    return res.json({
+      success: true,
+      type: 'invite',
+      role: 'user', // Sempre Usuário Padrão por regra RBAC
+      invite: {
+        id: invite.id,
+        email: invite.email,
+        unit: invite.unit,
+        code: invite.code,
+        role: 'user'
+      }
+    });
+  }
+
+  return res.status(401).json({
+    success: false,
+    error: 'Código de acesso incorreto ou convite inexistente.'
   });
 });
 
-// Buscar detalhes e lista de moradores da campainha
+// 2. Cadastro / Aceite de Convite (Cadastra o usuário como "Usuário Padrão")
+app.post('/api/auth/register-invite', (req, res) => {
+  const { code, name, photo } = req.body;
+  if (!code || !name) {
+    return res.status(400).json({ success: false, error: 'Código do convite e nome são obrigatórios.' });
+  }
+
+  const result = Database.acceptInvite(code, { name, photo });
+  if (!result.success) {
+    return res.status(400).json(result);
+  }
+
+  // Atualiza em tempo real a lista de moradores nos celulares e na tela do portão
+  io.to('doorbell:minha-casa').emit('residents-updated', Database.getAllUsers());
+
+  res.json({
+    success: true,
+    user: result.user
+  });
+});
+
+// ==================== ROTAS ADMINISTRATIVAS (RBAC: ADMIN ONLY) ====================
+
+// 3. Convidar Novo Usuário (Apenas Administradora)
+app.post('/api/admin/invite', (req, res) => {
+  const { email, unit, adminCode } = req.body;
+
+  // Validação de Permissão RBAC
+  if (adminCode !== MASTER_ACCESS_CODE) {
+    return res.status(403).json({
+      success: false,
+      error: 'Acesso negado. Apenas a Administradora possui permissão para convidar novos usuários.'
+    });
+  }
+
+  if (!email || !email.includes('@')) {
+    return res.status(400).json({ success: false, error: 'Por favor, informe um endereço de e-mail válido.' });
+  }
+
+  const result = Database.createInvite({
+    email,
+    unit: unit || 'Casa 1',
+    invitedBy: 'Administradora'
+  });
+
+  if (!result.success) {
+    return res.status(400).json(result);
+  }
+
+  res.json(result);
+});
+
+// 4. Listar Usuários e Convites (Apenas Administradora)
+app.get('/api/admin/users', (req, res) => {
+  const adminCode = req.query.adminCode || req.headers['x-admin-code'];
+  if (adminCode !== MASTER_ACCESS_CODE) {
+    return res.status(403).json({
+      success: false,
+      error: 'Acesso negado. Painel administrativo restrito à Administradora.'
+    });
+  }
+
+  res.json({
+    success: true,
+    users: Database.getAllUsers(),
+    invites: Database.getAllInvites()
+  });
+});
+
+// 5. Excluir Usuário (Apenas Administradora - protegido contra exclusão da própria admin)
+app.delete('/api/admin/users/:id', (req, res) => {
+  const adminCode = req.body.adminCode || req.headers['x-admin-code'];
+  if (adminCode !== MASTER_ACCESS_CODE) {
+    return res.status(403).json({ success: false, error: 'Acesso negado. Apenas a Administradora pode remover usuários.' });
+  }
+
+  const result = Database.deleteUser(req.params.id);
+  if (!result.success) {
+    return res.status(400).json(result);
+  }
+
+  io.to('doorbell:minha-casa').emit('resident-removed', { residentId: req.params.id });
+  io.to('doorbell:minha-casa').emit('residents-updated', Database.getAllUsers());
+  res.json({ success: true, message: 'Usuário removido com sucesso.' });
+});
+
+// 6. Cancelar Convite Pendente
+app.delete('/api/admin/invites/:id', (req, res) => {
+  const adminCode = req.body.adminCode || req.headers['x-admin-code'];
+  if (adminCode !== MASTER_ACCESS_CODE) {
+    return res.status(403).json({ success: false, error: 'Acesso negado.' });
+  }
+
+  const result = Database.deleteInvite(req.params.id);
+  res.json(result);
+});
+
+// ==================== ROTAS DA CAMPAINHA E PORTÃO ====================
+
+// Buscar detalhes da campainha e lista de moradores cadastrados
 app.get('/api/doorbell/:id', (req, res) => {
   const id = req.params.id || 'minha-casa';
-  const data = getOrCreateDoorbell(id);
-  res.json(data);
+  const cfg = Database.getDoorbellConfig(id);
+  const residents = Database.getAllUsers();
+  res.json({
+    ...cfg,
+    residents
+  });
 });
 
-// Atualizar dados gerais (Nome, Endereço)
+// Atualizar título/endereço da campainha (Apenas Administradora)
 app.post('/api/doorbell/:id', (req, res) => {
   const id = req.params.id || 'minha-casa';
-  const current = getOrCreateDoorbell(id);
-  
-  if (req.body.title !== undefined) current.title = req.body.title;
-  if (req.body.address !== undefined) current.address = req.body.address;
-  current.updatedAt = new Date().toISOString();
-  saveDoorbells();
-  
-  io.to(`doorbell:${id}`).emit('config-updated', current);
-  res.json({ success: true, data: current });
-});
-
-// Adicionar ou Atualizar Morador / Vizinho
-app.post('/api/doorbell/:id/residents', (req, res) => {
-  const id = req.params.id || 'minha-casa';
-  const { resident, adminCode } = req.body;
-  const current = getOrCreateDoorbell(id);
+  const { title, address, adminCode } = req.body;
 
   if (adminCode !== MASTER_ACCESS_CODE) {
-    return res.status(403).json({ error: 'Apenas o Administrador Mestre pode gerenciar moradores.' });
+    return res.status(403).json({ success: false, error: 'Apenas a Administradora pode alterar as configurações do sistema.' });
+  }
+
+  const updated = Database.saveDoorbellConfig({ id, title, address });
+  io.to(`doorbell:${id}`).emit('config-updated', updated);
+  res.json({ success: true, data: updated });
+});
+
+// Compatibilidade: Adicionar ou Atualizar Morador
+app.post('/api/doorbell/:id/residents', (req, res) => {
+  const { resident, adminCode } = req.body;
+  if (adminCode !== MASTER_ACCESS_CODE) {
+    return res.status(403).json({ error: 'Apenas a Administradora pode gerenciar moradores.' });
   }
 
   if (!resident || !resident.name || !resident.unit) {
     return res.status(400).json({ error: 'Nome e Casa/Unidade são obrigatórios.' });
   }
 
-  const existingIdx = current.residents.findIndex(r => r.id === resident.id);
-  if (existingIdx >= 0) {
-    current.residents[existingIdx] = { ...current.residents[existingIdx], ...resident };
-  } else {
-    current.residents.push({
-      id: resident.id || 'res_' + Date.now(),
-      name: resident.name,
-      unit: resident.unit,
-      photo: resident.photo || '',
-      isAdmin: false,
-      code: resident.code || MASTER_ACCESS_CODE,
-      createdAt: new Date().toISOString()
-    });
-  }
+  Database.saveUser({
+    id: resident.id || 'usr_' + Date.now(),
+    name: resident.name,
+    unit: resident.unit,
+    photo: resident.photo || '',
+    role: resident.role || 'user',
+    access_code: resident.code || 'CONV-' + Math.floor(1000 + Math.random() * 9000),
+    email: resident.email || null
+  });
 
-  current.updatedAt = new Date().toISOString();
-  saveDoorbells();
-
-  io.to(`doorbell:${id}`).emit('residents-updated', current.residents);
-  res.json({ success: true, residents: current.residents });
+  const updatedList = Database.getAllUsers();
+  io.to('doorbell:minha-casa').emit('residents-updated', updatedList);
+  res.json({ success: true, residents: updatedList });
 });
 
-// Excluir Morador (EXCLUSIVO PARA O ADMINISTRADOR MESTRE)
+// Compatibilidade: Excluir Morador
 app.post('/api/doorbell/:id/residents/delete', (req, res) => {
-  const id = req.params.id || 'minha-casa';
   const { residentId, adminCode } = req.body;
-  const current = getOrCreateDoorbell(id);
-
   if (adminCode !== MASTER_ACCESS_CODE) {
-    return res.status(403).json({ error: 'Apenas o Administrador Mestre pode remover moradores.' });
+    return res.status(403).json({ error: 'Apenas a Administradora pode remover moradores.' });
   }
 
-  current.residents = current.residents.filter(r => r.id !== residentId);
-  current.updatedAt = new Date().toISOString();
-  saveDoorbells();
+  const result = Database.deleteUser(residentId);
+  if (!result.success) {
+    return res.status(400).json(result);
+  }
 
-  // Desconecta o morador expulso
-  io.to(`doorbell:${id}`).emit('resident-removed', { residentId });
-  io.to(`doorbell:${id}`).emit('residents-updated', current.residents);
-  
-  res.json({ success: true, residents: current.residents });
+  io.to('doorbell:minha-casa').emit('resident-removed', { residentId });
+  io.to('doorbell:minha-casa').emit('residents-updated', Database.getAllUsers());
+  res.json({ success: true, residents: Database.getAllUsers() });
 });
 
-// Rota de Download do APK Android direto no celular
+// Download do APK Android direto no celular
 app.get('/download', (req, res) => {
   const apkPath = path.join(__dirname, 'public', 'CampainhaDigital.apk');
   if (fs.existsSync(apkPath)) {
@@ -208,10 +277,10 @@ app.get('/download', (req, res) => {
 // Verificação de versão atualizada
 app.get('/api/version', (req, res) => {
   res.json({
-    versionName: '2.1.0',
-    versionCode: 3,
+    versionName: '2.2.0',
+    versionCode: 4,
     downloadUrl: '/download',
-    changelog: 'Conexão em tempo real aprimorada, recebimento garantido de chamadas e viva-voz'
+    changelog: 'Sistema RBAC com Administradora, convites por e-mail e banco de dados SQLite'
   });
 });
 
@@ -235,12 +304,12 @@ app.get('/api/qr/:id', async (req, res) => {
     res.type('png');
     res.send(qrBuffer);
   } catch (err) {
-    res.status(500).send('Erro ao gerar QR Code');
+    res.status(500).json({ error: 'Erro ao gerar QR Code' });
   }
 });
 
-// Rota para o entregador acessar: /campainha/:id
-app.get('/campainha/:id', (req, res, next) => {
+// Rota para o entregador / visitante acessar
+app.get(['/campainha', '/campainha/:id', '/visitor', '/visitante'], (req, res, next) => {
   if (req.params.id && req.params.id.includes('.')) {
     return next();
   }
@@ -252,19 +321,19 @@ app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
-// Mapeamento de Moradores Conectados
-// socketId -> { doorbellId, residentId, unit, name, role }
+// ==================== COMUNICAÇÃO EM TEMPO REAL (SOCKET.IO) ====================
+
 const connectedResidents = new Map();
 
 io.on('connection', (socket) => {
   console.log(`[Socket Conectado] ${socket.id}`);
 
-  // Registro de Morador / Vizinho autenticado pelo código
+  // Registro de Morador / Administradora autenticado
   socket.on('register-resident', ({ doorbellId, resident }) => {
     doorbellId = doorbellId || 'minha-casa';
     socket.doorbellId = doorbellId;
     socket.resident = resident;
-    socket.role = 'resident';
+    socket.role = (resident && resident.role) ? resident.role : 'user';
     socket.join(`doorbell:${doorbellId}`);
 
     if (resident && resident.unit) {
@@ -279,12 +348,14 @@ io.on('connection', (socket) => {
       residentId: resident ? resident.id : null,
       unit: resident ? resident.unit : null,
       name: resident ? resident.name : null,
-      isAdmin: resident ? resident.isAdmin : false
+      role: socket.role,
+      isAdmin: socket.role === 'admin'
     });
 
-    const config = getOrCreateDoorbell(doorbellId);
-    socket.emit('registered', { role: 'resident', config });
-    console.log(`[Morador Registrado] ${resident ? resident.name : 'Anônimo'} (${resident ? resident.unit : 'Sem Unidade'}) | ID: ${doorbellId}`);
+    const config = Database.getDoorbellConfig(doorbellId);
+    const residents = Database.getAllUsers();
+    socket.emit('registered', { role: 'resident', config: { ...config, residents } });
+    console.log(`[Morador Registrado] ${resident ? resident.name : 'Anônimo'} (${resident ? resident.unit : 'Geral'}) [Cargo: ${socket.role}] | ID: ${doorbellId}`);
   });
 
   // Registro do Entregador/Visitante
@@ -294,11 +365,12 @@ io.on('connection', (socket) => {
     socket.role = 'visitor';
     socket.join(`doorbell:${doorbellId}`);
     
-    const config = getOrCreateDoorbell(doorbellId);
+    const config = Database.getDoorbellConfig(doorbellId);
+    const residents = Database.getAllUsers();
     socket.emit('registered', { 
       role: 'visitor', 
-      config,
-      residents: config.residents || []
+      config: { ...config, residents },
+      residents
     });
     console.log(`[Visitante Conectado] Campainha: ${doorbellId}`);
   });
@@ -317,7 +389,7 @@ io.on('connection', (socket) => {
       visitorInfo: visitorInfo || {}
     };
 
-    // 1. SEMPRE envia para a sala geral da campainha (o app do morador decide se toca nele)
+    // 1. SEMPRE envia para a sala geral da campainha para NUNCA perder chamada
     socket.to(`doorbell:${doorbellId}`).emit('incoming-call', callPayload);
 
     // 2. Se houver unidade específica, dispara também diretamente para as variações de sala da unidade
@@ -382,4 +454,5 @@ io.on('connection', (socket) => {
 
 server.listen(PORT, '0.0.0.0', () => {
   console.log(`🔔 Servidor Campainha Digital rodando na porta ${PORT}`);
+  console.log(`🛡️ Sistema RBAC e Banco de Dados SQLite Ativos!`);
 });
