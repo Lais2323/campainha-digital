@@ -309,10 +309,10 @@ app.get('/download', (req, res) => {
 // Verificação de versão atualizada
 app.get('/api/version', (req, res) => {
   res.json({
-    versionName: '2.9.0',
-    versionCode: 11,
+    versionName: '3.0.0',
+    versionCode: 12,
     downloadUrl: '/download',
-    changelog: 'Cartões de moradores com fotos do app, viva-voz no visitante e garantia de toque'
+    changelog: 'Otimização anti-duplicação de chamadas e estabilidade total no receptor'
   });
 });
 
@@ -443,20 +443,30 @@ io.on('connection', (socket) => {
       visitorInfo: visitorInfo || {}
     };
 
-    // 1. SEMPRE envia para a sala geral da campainha para NUNCA perder chamada
-    socket.to(`doorbell:${doorbellId}`).emit('incoming-call', callPayload);
+    // Coleta sockets únicos de moradores para NUNCA duplicar o evento
+    const targetSockets = new Set();
 
-    // 2. Dispara diretamente para cada morador conectado
+    // 1. Moradores conectados registrados
     connectedResidents.forEach((res, residentSocketId) => {
-      io.to(residentSocketId).emit('incoming-call', callPayload);
+      if (residentSocketId !== socket.id) {
+        targetSockets.add(residentSocketId);
+      }
     });
 
-    // 3. Se houver unidade específica, dispara também diretamente para as variações de sala da unidade
-    if (targetUnit) {
-      io.to(`unit:${doorbellId}:${targetUnit}`).emit('incoming-call', callPayload);
-      io.to(`unit:${doorbellId}:${targetUnit.trim()}`).emit('incoming-call', callPayload);
-      io.to(`unit:${doorbellId}:${targetUnit.trim().toLowerCase()}`).emit('incoming-call', callPayload);
+    // 2. Sockets na sala geral da campainha
+    const room = io.sockets.adapter.rooms.get(`doorbell:${doorbellId}`);
+    if (room) {
+      room.forEach(sId => {
+        if (sId !== socket.id) {
+          targetSockets.add(sId);
+        }
+      });
     }
+
+    // 3. Dispara exatamente UMA VEZ para cada aparelho de morador
+    targetSockets.forEach(targetSocketId => {
+      io.to(targetSocketId).emit('incoming-call', callPayload);
+    });
 
     socket.emit('ringing-started', { timestamp: Date.now() });
   });

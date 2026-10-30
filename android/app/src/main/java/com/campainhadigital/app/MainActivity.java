@@ -312,9 +312,11 @@ public class MainActivity extends AppCompatActivity {
                             wakeLock.acquire(30000);
                         }
 
-                        Intent bringToFront = new Intent(MainActivity.this, MainActivity.class);
-                        bringToFront.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_REORDER_TO_FRONT | Intent.FLAG_ACTIVITY_SINGLE_TOP);
-                        startActivity(bringToFront);
+                        if (!hasWindowFocus()) {
+                            Intent bringToFront = new Intent(MainActivity.this, MainActivity.class);
+                            bringToFront.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_REORDER_TO_FRONT | Intent.FLAG_ACTIVITY_SINGLE_TOP);
+                            startActivity(bringToFront);
+                        }
 
                     } catch (Exception e) {
                         e.printStackTrace();

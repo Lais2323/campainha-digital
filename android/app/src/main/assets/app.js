@@ -682,7 +682,7 @@
       const res = await fetch(`${config.serverUrl.replace(/\/$/, '')}/api/version`);
       if (res.ok) {
         const data = await res.json();
-        let currentVersionCode = 11;
+        let currentVersionCode = 12;
         if (window.AndroidBridge && window.AndroidBridge.getAppVersionCode) {
           try {
             currentVersionCode = window.AndroidBridge.getAppVersionCode();
@@ -832,8 +832,15 @@
         }
       });
 
+      let lastIncomingCallTime = 0;
       // RECEBE CHAMADA DO PORTÃO
       socket.on('incoming-call', (callData) => {
+        const now = Date.now();
+        if (currentIncomingCall && (now - lastIncomingCallTime < 4000)) {
+          console.log('[Chamada Duplicada Ignorada por Debounce]');
+          return;
+        }
+        lastIncomingCallTime = now;
         console.log('[🔔 EVENTO incoming-call RECEBIDO!]', callData);
 
         if (!currentResident) {
