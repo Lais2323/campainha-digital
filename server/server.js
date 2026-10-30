@@ -136,6 +136,26 @@ app.get('/api/qr/:id', async (req, res) => {
   }
 });
 
+// Rota de Download do APK Android atualizado direto pelo celular
+app.get('/download', (req, res) => {
+  const apkPath = path.join(__dirname, 'public', 'CampainhaDigital.apk');
+  if (fs.existsSync(apkPath)) {
+    res.download(apkPath, 'CampainhaDigital.apk');
+  } else {
+    res.status(404).send('APK ainda não disponível para download.');
+  }
+});
+
+// Verificação de versão atualizada pelo aplicativo
+app.get('/api/version', (req, res) => {
+  res.json({
+    versionName: '1.2.0',
+    versionCode: 2,
+    downloadUrl: '/download',
+    changelog: 'Adicionado viva-voz automático e correções de conexão'
+  });
+});
+
 // Rota para o entregador acessar: /campainha/:id
 app.get('/campainha/:id', (req, res, next) => {
   // Ignora se for arquivo estático com extensão (.css, .js, .png, etc)

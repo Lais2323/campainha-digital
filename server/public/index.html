@@ -10,32 +10,52 @@
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; font-family: 'Plus Jakarta Sans', sans-serif; }
     body { background: #0f172a; color: #f8fafc; min-height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 2rem 1rem; }
-    .card { background: #1e293b; border: 1px solid rgba(255,255,255,0.1); border-radius: 20px; padding: 2.5rem; max-width: 580px; width: 100%; box-shadow: 0 20px 40px rgba(0,0,0,0.4); text-align: center; }
-    .badge { display: inline-flex; align-items: center; gap: 8px; background: rgba(34,197,94,0.15); border: 1px solid rgba(34,197,94,0.3); color: #4ade80; font-size: 0.8rem; font-weight: 700; padding: 6px 14px; border-radius: 9999px; margin-bottom: 1.5rem; }
-    .dot { width: 8px; height: 8px; background: #22c55e; border-radius: 50%; }
-    h1 { font-size: 2rem; font-weight: 800; margin-bottom: 0.5rem; }
-    p.subtitle { color: #94a3b8; font-size: 0.95rem; margin-bottom: 2rem; line-height: 1.5; }
-    .qr-box { background: white; padding: 16px; border-radius: 16px; display: inline-block; margin-bottom: 1.5rem; box-shadow: 0 10px 25px rgba(0,0,0,0.3); }
-    .qr-box img { display: block; width: 220px; height: 220px; }
-    .links-box { background: #0b0f19; border-radius: 14px; padding: 1.25rem; text-align: left; margin-bottom: 1.5rem; }
+    .card { background: #1e293b; border: 1px solid rgba(255,255,255,0.1); border-radius: 20px; padding: 2rem 1.75rem; max-width: 540px; width: 100%; box-shadow: 0 20px 40px rgba(0,0,0,0.4); text-align: center; }
+    .badge { display: inline-flex; align-items: center; gap: 8px; background: rgba(34,197,94,0.15); border: 1px solid rgba(34,197,94,0.3); color: #4ade80; font-size: 0.8rem; font-weight: 700; padding: 6px 14px; border-radius: 9999px; margin-bottom: 1.25rem; }
+    .dot { width: 8px; height: 8px; background: #22c55e; border-radius: 50%; box-shadow: 0 0 10px #22c55e; }
+    h1 { font-size: 1.85rem; font-weight: 800; margin-bottom: 0.4rem; }
+    p.subtitle { color: #94a3b8; font-size: 0.9rem; margin-bottom: 1.75rem; line-height: 1.45; }
+    
+    /* BOTÃO DE DOWNLOAD DO APK DIRETO NO CELULAR */
+    .download-card { background: linear-gradient(135deg, rgba(37,99,235,0.2), rgba(16,185,129,0.15)); border: 1px solid rgba(37,99,235,0.4); border-radius: 16px; padding: 1.25rem; margin-bottom: 1.5rem; text-align: center; }
+    .btn-download-apk { display: inline-flex; align-items: center; justify-content: center; gap: 10px; width: 100%; background: #22c55e; color: #ffffff; padding: 1rem 1.5rem; border-radius: 14px; text-decoration: none; font-weight: 800; font-size: 1.05rem; box-shadow: 0 8px 25px rgba(34,197,94,0.45); transition: transform 0.15s, background 0.2s; }
+    .btn-download-apk:active { transform: scale(0.98); }
+    .btn-download-apk svg { width: 24px; height: 24px; }
+    .download-tip { display: block; font-size: 0.76rem; color: #94a3b8; margin-top: 8px; }
+
+    .qr-box { background: white; padding: 14px; border-radius: 16px; display: inline-block; margin-bottom: 1.25rem; box-shadow: 0 10px 25px rgba(0,0,0,0.3); }
+    .qr-box img { display: block; width: 200px; height: 200px; }
+    .links-box { background: #0b0f19; border-radius: 14px; padding: 1.25rem; text-align: left; margin-bottom: 1.25rem; }
     .link-row { margin-bottom: 0.75rem; word-break: break-all; }
     .link-row:last-child { margin-bottom: 0; }
-    .link-label { font-size: 0.75rem; text-transform: uppercase; color: #64748b; font-weight: 700; margin-bottom: 3px; }
-    .link-url a { color: #38bdf8; text-decoration: none; font-size: 0.9rem; font-weight: 600; }
+    .link-label { font-size: 0.72rem; text-transform: uppercase; color: #64748b; font-weight: 700; margin-bottom: 3px; }
+    .link-url a { color: #38bdf8; text-decoration: none; font-size: 0.88rem; font-weight: 600; }
     .link-url a:hover { text-decoration: underline; }
-    .btn-action { display: inline-block; background: #2563eb; color: white; padding: 0.85rem 1.75rem; border-radius: 12px; text-decoration: none; font-weight: 700; font-size: 0.95rem; transition: background 0.2s; }
-    .btn-action:hover { background: #1d4ed8; }
+    .btn-action { display: inline-block; background: #334155; color: white; padding: 0.75rem 1.5rem; border-radius: 12px; text-decoration: none; font-weight: 700; font-size: 0.88rem; }
   </style>
 </head>
 <body>
   <div class="card">
     <div class="badge">
       <span class="dot"></span>
-      <span>SERVIÇO ONLINE & ATIVO</span>
+      <span>SERVIÇO ONLINE & ATIVO NA NUVEM</span>
     </div>
 
     <h1>Campainha Digital</h1>
-    <p class="subtitle">O servidor WebRTC e o portal do visitante estão em execução com suporte a múltiplos celulares (você e sua namorada).</p>
+    <p class="subtitle">Servidor WebRTC com voz, vídeo opcional e viva-voz automático.</p>
+
+    <!-- ÁREA DE DOWNLOAD DIRETO DO APK -->
+    <div class="download-card">
+      <a href="/download" class="btn-download-apk">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+          <polyline points="7 10 12 15 17 10"></polyline>
+          <line x1="12" y1="15" x2="12" y2="3"></line>
+        </svg>
+        <span>BAIXAR APLICATIVO ANDROID (.APK)</span>
+      </a>
+      <span class="download-tip">Toque para baixar e instalar no seu celular ou no da sua namorada sem precisar do PC!</span>
+    </div>
 
     <div class="qr-box">
       <img id="qrImg" src="/api/qr/minha-casa" alt="QR Code da Campainha">
@@ -46,26 +66,9 @@
         <div class="link-label">Link para os Entregadores (Aberto pelo QR Code):</div>
         <div class="link-url"><a id="visitorLink" href="/campainha/minha-casa" target="_blank">Abrir Página do Entregador</a></div>
       </div>
-      <div class="link-row">
-        <div class="link-label">IPs detectados nesta máquina:</div>
-        <div id="ipList" class="link-url" style="color:#cbd5e1; font-size:0.85rem;">Carregando redes...</div>
-      </div>
     </div>
 
-    <a href="/campainha/minha-casa" target="_blank" class="btn-action">Testar Como Visitante</a>
+    <a href="/campainha/minha-casa" target="_blank" class="btn-action">Testar Como Entregador</a>
   </div>
-
-  <script>
-    fetch('/api/network-info')
-      .then(res => res.json())
-      .then(data => {
-        const ipContainer = document.getElementById('ipList');
-        if (data.ips && data.ips.length > 0) {
-          ipContainer.innerHTML = data.ips.map(ip => `<div><code>http://${ip}:${data.port}/campainha/minha-casa</code></div>`).join('');
-        } else {
-          ipContainer.textContent = 'Apenas localhost';
-        }
-      });
-  </script>
 </body>
 </html>
