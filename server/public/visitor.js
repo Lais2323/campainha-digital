@@ -1,11 +1,9 @@
 // CLIENTE WEB DO VISITANTE / ENTREGADOR
-// Dispara a chamada AUTOMATICAMENTE ao escanear o QR Code
-// Sem necessidade de login!
+// Suporte a seleção de vizinho/morador específico para tocar apenas no celular dele!
 
 (function() {
   'use strict';
 
-  // Extrai o ID da campainha da URL: /campainha/:id ou ?id=:id
   let doorbellId = window.location.pathname.split('/campainha/')[1];
   if (!doorbellId) {
     const params = new URLSearchParams(window.location.search);
@@ -14,17 +12,22 @@
   doorbellId = doorbellId.replace(/\/$/, '') || 'minha-casa';
 
   // Elementos do DOM
-  const ownerNameEl = document.getElementById('ownerName');
+  const doorbellTitleEl = document.getElementById('doorbellTitle');
   const houseAddressEl = document.getElementById('addressText');
+  const stateSelectResident = document.getElementById('stateSelectResident');
   const stateCalling = document.getElementById('stateCalling');
   const stateInCall = document.getElementById('stateInCall');
   const stateEnded = document.getElementById('stateEnded');
-  const endedTitleEl = document.getElementById('endedTitle');
-  const endedDescEl = document.getElementById('endedDesc');
-  const btnAutoStartVoice = document.getElementById('btnAutoStartVoice');
+
+  const residentsListEl = document.getElementById('residentsList');
+  const callingPillText = document.getElementById('callingPillText');
+  const callingTargetTitle = document.getElementById('callingTargetTitle');
+  const callingNotice = document.getElementById('callingNotice');
+  const connectedResidentAvatar = document.getElementById('connectedResidentAvatar');
+  const inCallBadgeText = document.getElementById('inCallBadgeText');
+
   const btnCancelCall = document.getElementById('btnCancelCall');
   const btnRestart = document.getElementById('btnRestart');
-
   const btnToggleMic = document.getElementById('btnToggleMic');
   const labelMic = document.getElementById('labelMic');
   const btnToggleVideo = document.getElementById('btnToggleVideo');
@@ -39,7 +42,7 @@
   const voiceOnlyContainer = document.getElementById('voiceOnlyContainer');
   const callTimerEl = document.getElementById('callTimer');
 
-  // Variáveis de Estado WebRTC
+  // Variáveis de Estado
   let socket = null;
   let peerConnection = null;
   let localStream = null;
@@ -52,7 +55,8 @@
   let audioContext = null;
   let ringToneInterval = null;
   let connectedOwnerSocketId = null;
-  let autoRingTriggered = false;
+  let selectedResident = null;
+  let residentsList = [];
 
   const rtcConfig = {
     iceServers: [
@@ -61,29 +65,26 @@
     ]
   };
 
-  // 1. Conexão Socket.io
   function initSocket() {
     socket = io();
 
     socket.on('connect', () => {
       console.log('Conectado ao servidor de campainha!');
       socket.emit('register-visitor', { doorbellId });
-
-      // ACIONAMENTO AUTOMÁTICO DA CHAMADA ASSIM QUE CARREGA A PÁGINA
-      if (!autoRingTriggered) {
-        autoRingTriggered = true;
-        autoTriggerCall();
-      }
     });
 
-    socket.on('registered', ({ config }) => {
+    socket.on('registered', ({ config, residents }) => {
       if (config) {
-        updateDoorbellInfo(config);
+        if (config.title) doorbellTitleEl.textContent = config.title;
+        if (config.address) houseAddressEl.textContent = config.address;
       }
+      residentsList = residents || (config ? config.residents : []) || [];
+      renderResidentsSelection();
     });
 
-    socket.on('config-updated', (config) => {
-      updateDoorbellInfo(config);
+    socket.on('residents-updated', (updatedResidents) => {
+      residentsList = updatedResidents || [];
+      renderResidentsSelection();
     });
 
     socket.on('ringing-started', () => {
@@ -91,14 +92,16 @@
       playRingbackTone();
     });
 
-    // Quando o morador atende
-    socket.on('call-answered', async ({ by, ownerUser }) => {
-      console.log('Chamada atendida pelo morador!', by);
+    socket.on('call-answered', async ({ by, resident }) => {
+      console.log('Chamada atendida pelo morador!', by, resident);
       stopRingbackTone();
       connectedOwnerSocketId = by;
 
-      if (ownerUser && ownerUser.name) {
-        ownerNameEl.textContent = ownerUser.name;
+      if (resident && resident.name) {
+        inCallBadgeText.textContent = `FALANDO COM: ${resident.name.toUpperCase()} (${resident.unit})`;
+        if (resident.photo) {
+          connectedResidentAvatar.innerHTML = `<img src="${resident.photo}" alt="${resident.name}">`;
+        }
       }
 
       await startMediaAndWebRTC();
@@ -109,20 +112,15 @@
     socket.on('call-rejected', () => {
       stopRingbackTone();
       cleanupMedia();
-      endedTitleEl.textContent = 'Chamada Não Atendida';
-      endedDescEl.textContent = 'O morador não pôde atender no momento.';
       switchState('ended');
     });
 
     socket.on('call-ended', () => {
       stopRingbackTone();
       cleanupMedia();
-      endedTitleEl.textContent = 'Chamada Finalizada';
-      endedDescEl.textContent = 'A conversa com o morador foi encerrada.';
       switchState('ended');
     });
 
-    // Sinalização WebRTC
     socket.on('webrtc-offer', async ({ offer, from }) => {
       try {
         if (!peerConnection) await createPeerConnection();
@@ -166,37 +164,74 @@
     });
   }
 
-  function updateDoorbellInfo(config) {
-    if (config.ownerName) ownerNameEl.textContent = config.ownerName;
-    if (config.address) houseAddressEl.textContent = config.address;
+  // RENDERIZA A LISTA DE VIZINHOS / MORADORES
+  function renderResidentsSelection() {
+    if (!residentsList || residentsList.length === 0) {
+      residentsListEl.innerHTML = '<div class="loading-residents">Nenhum morador registrado ainda.</div>';
+      return;
+    }
+
+    // Se houver apenas 1 morador, dispara a chamada diretamente sem precisar escolher!
+    if (residentsList.length === 1 && !selectedResident) {
+      triggerCallToResident(residentsList[0]);
+      return;
+    }
+
+    residentsListEl.innerHTML = '';
+    residentsList.forEach(res => {
+      const card = document.createElement('div');
+      card.className = 'resident-card-btn';
+      
+      const avatarHtml = res.photo 
+        ? `<img class="res-avatar" src="${res.photo}" alt="${res.name}">` 
+        : `<div class="res-avatar">${res.name.charAt(0).toUpperCase()}</div>`;
+
+      card.innerHTML = `
+        ${avatarHtml}
+        <span class="res-unit-badge">${res.unit}</span>
+        <span class="res-name">${res.name}</span>
+      `;
+
+      card.addEventListener('click', () => {
+        triggerCallToResident(res);
+      });
+
+      residentsListEl.appendChild(card);
+    });
   }
 
-  function switchState(state) {
-    stateCalling.classList.remove('active');
-    stateInCall.classList.remove('active');
-    stateEnded.classList.remove('active');
+  // Tocar para um vizinho / morador específico!
+  function triggerCallToResident(res) {
+    selectedResident = res;
+    callingPillText.textContent = `TOCANDO: ${res.unit.toUpperCase()}...`;
+    callingTargetTitle.textContent = `${res.name} (${res.unit})`;
+    callingNotice.innerHTML = `Chamando <strong>${res.name}</strong> na <strong>${res.unit}</strong>. Apenas o celular deste morador está tocando!`;
 
-    if (state === 'calling') stateCalling.classList.add('active');
-    if (state === 'incall') stateInCall.classList.add('active');
-    if (state === 'ended') stateEnded.classList.add('active');
-  }
-
-  // DISPARAR CHAMADA AUTOMATICAMENTE AO ABRIR O LINK
-  function autoTriggerCall() {
-    console.log('[🔔 DISPARO AUTOMÁTICO] Tocando a campainha...');
     switchState('calling');
     playRingbackTone();
-
-    // Solicita o microfone antecipadamente para já estar pronto quando o morador atender
     requestMicrophoneEarly();
 
     socket.emit('ring-doorbell', {
       doorbellId,
+      targetUnit: res.unit,
+      targetResidentId: res.id,
       visitorInfo: {
         userAgent: navigator.userAgent,
         time: new Date().toLocaleTimeString('pt-BR')
       }
     });
+  }
+
+  function switchState(state) {
+    stateSelectResident.classList.remove('active');
+    stateCalling.classList.remove('active');
+    stateInCall.classList.remove('active');
+    stateEnded.classList.remove('active');
+
+    if (state === 'select') stateSelectResident.classList.add('active');
+    if (state === 'calling') stateCalling.classList.add('active');
+    if (state === 'incall') stateInCall.classList.add('active');
+    if (state === 'ended') stateEnded.classList.add('active');
   }
 
   async function requestMicrophoneEarly() {
@@ -207,17 +242,12 @@
           noiseSuppression: true,
           autoGainControl: true
         },
-        video: false // Câmera SEMPRE desligada por padrão
+        video: false
       });
       localAudioTrack = localStream.getAudioTracks()[0];
-      btnAutoStartVoice.classList.add('hidden');
-    } catch (err) {
-      console.log('Permissão de microfone requer toque do usuário:', err);
-      btnAutoStartVoice.classList.remove('hidden');
-    }
+    } catch (e) {}
   }
 
-  // Som de chamada tocando (Ringback)
   function playRingbackTone() {
     try {
       const AudioCtx = window.AudioContext || window.webkitAudioContext;
@@ -251,12 +281,10 @@
     }
   }
 
-  // Estabelecer conexão WebRTC de Áudio (SOMENTE VOZ POR PADRÃO)
   async function startMediaAndWebRTC() {
     if (!localStream) {
       await requestMicrophoneEarly();
     }
-
     await createPeerConnection();
 
     if (localStream) {
@@ -294,7 +322,7 @@
     peerConnection.ontrack = (event) => {
       if (event.track.kind === 'audio') {
         remoteAudio.srcObject = event.streams[0];
-        remoteAudio.play().catch(e => console.log('Erro ao tocar áudio:', e));
+        remoteAudio.play().catch(e => console.log('Audio play error:', e));
       } else if (event.track.kind === 'video') {
         remoteVideo.srcObject = event.streams[0];
         remoteVideoContainer.classList.remove('hidden');
@@ -310,7 +338,7 @@
     };
   }
 
-  // REQUISITO: BOTÃO NO RODA-PÉ PRA ATIVAR VÍDEO SE NECESSÁRIO
+  // ATIVAR / DESATIVAR VÍDEO NO RODA-PÉ
   async function toggleVideo() {
     if (!isVideoEnabled) {
       try {
@@ -344,7 +372,6 @@
         socket.emit('video-state-changed', { doorbellId, isVideoActive: true, to: connectedOwnerSocketId });
 
       } catch (err) {
-        console.error('Erro ao ativar câmera:', err);
         alert('Não foi possível ativar a câmera.');
       }
     } else {
@@ -436,15 +463,10 @@
     labelVideo.textContent = 'Ativar Vídeo';
   }
 
-  // Listeners
-  btnAutoStartVoice.addEventListener('click', requestMicrophoneEarly);
-
   btnCancelCall.addEventListener('click', () => {
     stopRingbackTone();
     socket.emit('reject-call', { doorbellId });
-    endedTitleEl.textContent = 'Chamada Cancelada';
-    endedDescEl.textContent = 'Você cancelou a chamada.';
-    switchState('ended');
+    switchState('select');
   });
 
   btnToggleMic.addEventListener('click', toggleMic);
@@ -457,10 +479,13 @@
   });
 
   btnRestart.addEventListener('click', () => {
-    autoTriggerCall();
+    if (residentsList.length > 1) {
+      switchState('select');
+    } else if (residentsList.length === 1) {
+      triggerCallToResident(residentsList[0]);
+    }
   });
 
-  // Iniciar conexão socket
   initSocket();
 
 })();

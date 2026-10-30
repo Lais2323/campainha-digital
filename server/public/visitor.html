@@ -16,27 +16,40 @@
     <!-- CABEÇALHO RESIDENCIAL -->
     <header class="header">
       <div class="badge-house">
-        <svg class="icon-house" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+        <svg class="icon-house" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
           <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>
           <polyline points="9 22 9 12 15 12 15 22"></polyline>
         </svg>
-        <span>CAMPAINHA DIGITAL DO PORTÃO</span>
+        <span>CAMPAINHA DO PORTÃO</span>
       </div>
       
       <div class="resident-info">
-        <h1 id="ownerName" class="owner-name">Carregando morador...</h1>
+        <h1 id="doorbellTitle" class="owner-name">Campainha Residencial</h1>
         <p id="houseAddress" class="house-address">
-          <svg class="icon-pin" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <svg class="icon-pin" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path>
             <circle cx="12" cy="10" r="3"></circle>
           </svg>
-          <span id="addressText">Carregando endereço...</span>
+          <span id="addressText">Rua Principal, 123</span>
         </p>
       </div>
     </header>
 
-    <!-- ESTADO 1: INICIANDO / CHAMANDO AUTOMATICAMENTE -->
-    <main id="stateCalling" class="state-view active">
+    <!-- ESTADO 0: SELEÇÃO DE MORADOR / VIZINHO (QUANDO HÁ MAIS DE UM) -->
+    <main id="stateSelectResident" class="state-view active">
+      <div class="select-box">
+        <h2 class="select-title">Para quem é a entrega / visita?</h2>
+        <p class="select-sub">Toque na casa ou morador para chamar diretamente:</p>
+
+        <div id="residentsList" class="residents-grid">
+          <!-- Carregado dinamicamente -->
+          <div class="loading-residents">Localizando moradores...</div>
+        </div>
+      </div>
+    </main>
+
+    <!-- ESTADO 1: CHAMANDO O MORADOR ESCOLHIDO -->
+    <main id="stateCalling" class="state-view">
       <div class="calling-container">
         
         <div class="radar-box">
@@ -52,28 +65,17 @@
         
         <div class="status-pill-calling">
           <span class="dot-calling"></span>
-          <span>TOCANDO NO CELULAR DO MORADOR...</span>
+          <span id="callingPillText">TOCANDO NO CELULAR...</span>
         </div>
 
-        <h2 class="calling-title">Chamada em Andamento</h2>
+        <h2 id="callingTargetTitle" class="calling-title">Chamando Morador...</h2>
         <p id="callingNotice" class="calling-subtitle">
-          A campainha foi <strong>acionada automaticamente</strong> ao escanear o QR Code. Aguarde o morador atender.
+          Aguarde. O celular específico deste morador está tocando agora.
         </p>
 
-        <!-- SE O NAVEGADOR BLOQUEAR ÁUDIO ATÉ O PRIMEIRO TOQUE -->
-        <button id="btnAutoStartVoice" class="btn-voice-prompt hidden">
-          <svg viewBox="0 0 24 24" fill="currentColor">
-            <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path>
-            <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
-            <line x1="12" y1="19" x2="12" y2="23"></line>
-            <line x1="8" y1="23" x2="16" y2="23"></line>
-          </svg>
-          <span>Toque aqui para ativar o microfone</span>
-        </button>
-        
         <div class="calling-actions">
           <button id="btnCancelCall" class="btn-circle btn-cancel" title="Cancelar">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
               <line x1="18" y1="6" x2="6" y2="18"></line>
               <line x1="6" y1="6" x2="18" y2="18"></line>
             </svg>
@@ -96,7 +98,7 @@
         <!-- VISUALIZADOR DE VOZ (SOMENTE VOZ POR PADRÃO) -->
         <div id="voiceOnlyContainer" class="voice-only-stage">
           <div class="avatar-speaker">
-            <div class="avatar-circle">
+            <div id="connectedResidentAvatar" class="avatar-circle">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
                 <circle cx="12" cy="7" r="4"></circle>
@@ -113,7 +115,7 @@
           
           <div class="call-status-badge">
             <span class="dot-live"></span>
-            <span>CONVERSANDO COM O MORADOR</span>
+            <span id="inCallBadgeText">CONVERSANDO COM O MORADOR</span>
           </div>
           <div id="callTimer" class="call-timer">00:00</div>
           <p class="voice-notice">Áudio ativo por padrão. Câmera desligada.</p>
@@ -129,7 +131,7 @@
       <!-- ÁUDIO DO MORADOR -->
       <audio id="remoteAudio" autoplay></audio>
 
-      <!-- RODA-PÉ DA CHAMADA (CONTROLES OBRIGATÓRIOS) -->
+      <!-- RODA-PÉ DA CHAMADA -->
       <footer class="call-footer">
         <div class="footer-controls">
           
@@ -146,7 +148,7 @@
             <span id="labelMic">Voz Ativa</span>
           </button>
 
-          <!-- BOTAO NO RODA-PE: ATIVAR VIDEO SE NECESSARIO -->
+          <!-- ATIVAR VÍDEO -->
           <button id="btnToggleVideo" class="ctrl-btn btn-video" title="Ligar Vídeo">
             <div class="ctrl-icon-box">
               <svg class="icon-cam" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -181,7 +183,7 @@
         </div>
         <h2 id="endedTitle">Chamada Finalizada</h2>
         <p id="endedDesc">Obrigado pela entrega ou visita!</p>
-        <button id="btnRestart" class="btn-restart">Tocar Novamente</button>
+        <button id="btnRestart" class="btn-restart">Chamar Novamente</button>
       </div>
     </main>
 
