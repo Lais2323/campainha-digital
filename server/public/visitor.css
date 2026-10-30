@@ -166,9 +166,28 @@ body {
 }
 
 .res-name {
-  font-size: 0.82rem;
+  font-size: 0.88rem;
   font-weight: 700;
   color: #f1f5f9;
+}
+
+.res-call-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: #22c55e;
+  color: #ffffff;
+  font-size: 0.72rem;
+  font-weight: 700;
+  padding: 3px 10px;
+  border-radius: 20px;
+  margin-top: 4px;
+  box-shadow: 0 2px 8px rgba(34, 197, 94, 0.4);
+}
+
+.res-avatar-initial {
+  background: linear-gradient(135deg, #3b82f6, #1d4ed8);
+  color: #ffffff;
 }
 
 /* ESTADO 1: CHAMANDO */

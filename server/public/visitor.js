@@ -30,9 +30,12 @@
   const btnRestart = document.getElementById('btnRestart');
   const btnToggleMic = document.getElementById('btnToggleMic');
   const labelMic = document.getElementById('labelMic');
+  const btnToggleSpeaker = document.getElementById('btnToggleSpeaker');
+  const labelSpeaker = document.getElementById('labelSpeaker');
   const btnToggleVideo = document.getElementById('btnToggleVideo');
   const labelVideo = document.getElementById('labelVideo');
   const btnEndCall = document.getElementById('btnEndCall');
+  let isSpeakerOn = true;
 
   const remoteAudio = document.getElementById('remoteAudio');
   const remoteVideo = document.getElementById('remoteVideo');
@@ -191,73 +194,38 @@
     });
   }
 
-  // RENDERIZA A LISTA DE VIZINHOS / MORADORES
+  // RENDERIZA A LISTA DE MORADORES DISPONÍVEIS PARA LIGAÇÃO (COM AS FOTOS DO APP)
   function renderResidentsSelection() {
     residentsListEl.innerHTML = '';
 
-    if (!residentsList || residentsList.length === 0) {
-      residentsListEl.innerHTML = `
-        <div style="text-align:center; padding: 24px 12px; width: 100%;">
-          <p style="color:#94a3b8; margin-bottom:16px; font-size: 0.95rem;">Toque abaixo para tocar a campainha da casa:</p>
-          <button type="button" id="btnRingGeneral" class="btn-primary" style="padding:16px 28px; font-size:1.15rem; font-weight:700; border-radius:50px; width:100%; max-width: 300px; margin: 0 auto; display: flex; align-items: center; justify-content: center; gap: 8px; cursor: pointer;">
-            <svg style="width:22px;height:22px;" viewBox="0 0 24 24" fill="currentColor">
-              <path d="M12 22c1.1 0 2-.9 2-2h-4c0 1.1.89 2 2 2zm6-6v-5c0-3.07-1.64-5.64-4.5-6.32V4c0-.83-.67-1.5-1.5-1.5s-1.5.67-1.5 1.5v.68C7.63 5.36 6 7.92 6 11v5l-2 2v1h16v-1l-2-2z"/>
-            </svg>
-            Tocar Campainha
-          </button>
-        </div>
-      `;
-      const btn = document.getElementById('btnRingGeneral');
-      if (btn) {
-        btn.onclick = () => {
-          triggerCallToResident({ id: 'geral', name: 'Residência', unit: 'Casa 1' });
-        };
+    const list = (residentsList && residentsList.length > 0) ? residentsList : [
+      {
+        id: 'usr_admin_1',
+        name: (doorbellTitleEl.textContent && doorbellTitleEl.textContent !== 'Campainha Residencial') ? doorbellTitleEl.textContent : 'Administradora',
+        unit: 'Casa 1',
+        photo: '',
+        role: 'admin'
       }
-      return;
-    }
+    ];
 
-    if (residentsList.length === 1) {
-      const res = residentsList[0];
-      residentsListEl.innerHTML = `
-        <div style="text-align:center; padding: 20px 12px; width: 100%;">
-          <div style="margin-bottom: 18px;">
-            <div style="width: 76px; height: 76px; border-radius: 50%; background: linear-gradient(135deg, #3b82f6, #1d4ed8); display: flex; align-items: center; justify-content: center; margin: 0 auto 10px; font-size: 1.8rem; color: #fff; box-shadow: 0 8px 20px rgba(59, 130, 246, 0.35);">
-              ${res.photo ? `<img src="${res.photo}" alt="${res.name}" style="width:100%;height:100%;border-radius:50%;object-fit:cover;">` : (res.name ? res.name.charAt(0).toUpperCase() : '🏠')}
-            </div>
-            <h3 style="color:#f8fafc; font-size: 1.2rem; font-weight:700; margin: 0 0 4px 0;">${res.name}</h3>
-            <span style="display:inline-block; background:rgba(59, 130, 246, 0.15); color:#60a5fa; border:1px solid rgba(59, 130, 246, 0.3); border-radius:20px; padding:2px 12px; font-size:0.8rem; font-weight:600;">${res.unit}</span>
-          </div>
-
-          <button type="button" id="btnRingSingle" class="btn-primary" style="padding:16px 28px; font-size:1.15rem; font-weight:700; border-radius:50px; width:100%; max-width: 300px; margin: 0 auto; display: flex; align-items: center; justify-content: center; gap: 8px; cursor: pointer;">
-            <svg style="width:22px;height:22px;" viewBox="0 0 24 24" fill="currentColor">
-              <path d="M12 22c1.1 0 2-.9 2-2h-4c0 1.1.89 2 2 2zm6-6v-5c0-3.07-1.64-5.64-4.5-6.32V4c0-.83-.67-1.5-1.5-1.5s-1.5.67-1.5 1.5v.68C7.63 5.36 6 7.92 6 11v5l-2 2v1h16v-1l-2-2z"/>
-            </svg>
-            Tocar Campainha
-          </button>
-        </div>
-      `;
-      const btn = document.getElementById('btnRingSingle');
-      if (btn) {
-        btn.onclick = () => {
-          triggerCallToResident(res);
-        };
-      }
-      return;
-    }
-
-    residentsListEl.innerHTML = '';
-    residentsList.forEach(res => {
+    list.forEach(res => {
       const card = document.createElement('div');
       card.className = 'resident-card-btn';
       
       const avatarHtml = res.photo 
         ? `<img class="res-avatar" src="${res.photo}" alt="${res.name}">` 
-        : `<div class="res-avatar">${res.name.charAt(0).toUpperCase()}</div>`;
+        : `<div class="res-avatar res-avatar-initial">${(res.name || 'M').charAt(0).toUpperCase()}</div>`;
 
       card.innerHTML = `
         ${avatarHtml}
-        <span class="res-unit-badge">${res.unit}</span>
-        <span class="res-name">${res.name}</span>
+        <span class="res-unit-badge">${res.unit || 'Casa 1'}</span>
+        <span class="res-name">${res.name || 'Morador'}</span>
+        <div class="res-call-pill">
+          <svg style="width:13px;height:13px;" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M6.62 10.79c1.44 2.83 3.76 5.14 6.59 6.59l2.2-2.2c.27-.27.67-.36 1.02-.24 1.12.37 2.33.57 3.57.57.55 0 1 .45 1 1V20c0 .55-.45 1-1 1-9.39 0-17-7.61-17-17 0-.55.45-1 1-1h3.5c.55 0 1 .45 1 1 0 1.25.2 2.45.57 3.57.11.35.03.74-.25 1.02l-2.2 2.2z"/>
+          </svg>
+          Ligar
+        </div>
       `;
 
       card.addEventListener('click', () => {
@@ -271,9 +239,9 @@
   // Tocar para um vizinho / morador específico!
   function triggerCallToResident(res) {
     selectedResident = res;
-    callingPillText.textContent = `TOCANDO: ${res.unit.toUpperCase()}...`;
-    callingTargetTitle.textContent = `${res.name} (${res.unit})`;
-    callingNotice.innerHTML = `Chamando <strong>${res.name}</strong> na <strong>${res.unit}</strong>. Apenas o celular deste morador está tocando!`;
+    callingPillText.textContent = `TOCANDO: ${(res.unit || 'CASA').toUpperCase()}...`;
+    callingTargetTitle.textContent = `${res.name} (${res.unit || 'Casa'})`;
+    callingNotice.innerHTML = `Chamando <strong>${res.name}</strong> na <strong>${res.unit || 'Casa'}</strong>...`;
 
     switchState('calling');
     playRingbackTone();
@@ -284,6 +252,8 @@
       doorbellId,
       targetUnit: res.unit,
       targetResidentId: res.id,
+      targetRole: res.role || (res.isAdmin ? 'admin' : 'user'),
+      targetName: res.name,
       visitorInfo: {
         userAgent: navigator.userAgent,
         time: new Date().toLocaleTimeString('pt-BR')
@@ -545,6 +515,22 @@
     }
   }
 
+  function toggleSpeaker() {
+    isSpeakerOn = !isSpeakerOn;
+    if (remoteAudio) {
+      remoteAudio.muted = !isSpeakerOn;
+    }
+    if (btnToggleSpeaker) {
+      if (isSpeakerOn) {
+        btnToggleSpeaker.classList.add('active');
+        if (labelSpeaker) labelSpeaker.textContent = 'Viva-Voz';
+      } else {
+        btnToggleSpeaker.classList.remove('active');
+        if (labelSpeaker) labelSpeaker.textContent = 'Mudo';
+      }
+    }
+  }
+
   function startTimer() {
     callSeconds = 0;
     callTimerEl.textContent = '00:00';
@@ -605,6 +591,7 @@
   });
 
   btnToggleMic.addEventListener('click', toggleMic);
+  if (btnToggleSpeaker) btnToggleSpeaker.addEventListener('click', toggleSpeaker);
   btnToggleVideo.addEventListener('click', toggleVideo);
 
   btnEndCall.addEventListener('click', () => {
@@ -614,11 +601,7 @@
   });
 
   btnRestart.addEventListener('click', () => {
-    if (residentsList.length > 1) {
-      switchState('select');
-    } else if (residentsList.length === 1) {
-      triggerCallToResident(residentsList[0]);
-    }
+    switchState('select');
   });
 
   initSocket();

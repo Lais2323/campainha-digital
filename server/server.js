@@ -309,10 +309,10 @@ app.get('/download', (req, res) => {
 // Verificação de versão atualizada
 app.get('/api/version', (req, res) => {
   res.json({
-    versionName: '2.8.0',
-    versionCode: 10,
+    versionName: '2.9.0',
+    versionCode: 11,
     downloadUrl: '/download',
-    changelog: 'Estabilidade anti-desconexão contínua do Socket.io'
+    changelog: 'Cartões de moradores com fotos do app, viva-voz no visitante e garantia de toque'
   });
 });
 
@@ -384,9 +384,29 @@ io.on('connection', (socket) => {
       isAdmin: socket.role === 'admin'
     });
 
+    // Se o morador enviou perfil com foto/nome atualizado do app, sincroniza no banco e atualiza a campainha!
+    if (resident && resident.name) {
+      try {
+        const existing = (resident.id && Database.findUserById(resident.id)) || 
+                         (resident.code && Database.findUserByCode(resident.code)) || 
+                         (resident.role === 'admin' && Database.findUserByCode(MASTER_ACCESS_CODE));
+        if (existing) {
+          Database.saveUser({
+            ...existing,
+            name: resident.name,
+            unit: resident.unit || existing.unit,
+            photo: (resident.photo !== undefined && resident.photo !== null && resident.photo !== '') ? resident.photo : existing.photo
+          });
+        }
+      } catch (e) {
+        console.warn('Erro ao sincronizar perfil do morador no registro:', e);
+      }
+    }
+
     const config = Database.getDoorbellConfig(doorbellId);
     const residents = Database.getAllUsers();
     socket.emit('registered', { role: 'resident', config: { ...config, residents } });
+    io.to(`doorbell:${doorbellId}`).emit('residents-updated', residents);
     console.log(`[Morador Registrado] ${resident ? resident.name : 'Anônimo'} (${resident ? resident.unit : 'Geral'}) [Cargo: ${socket.role}] | ID: ${doorbellId}`);
   });
 
@@ -408,15 +428,17 @@ io.on('connection', (socket) => {
   });
 
   // Entregador toca para um Morador/Unidade específico
-  socket.on('ring-doorbell', ({ doorbellId, targetUnit, targetResidentId, visitorInfo }) => {
+  socket.on('ring-doorbell', ({ doorbellId, targetUnit, targetResidentId, targetRole, targetName, visitorInfo }) => {
     doorbellId = doorbellId || 'minha-casa';
-    console.log(`[🔔 CAMPAINHA TOCANDO] Destino: ${targetUnit || 'Geral'} em ${doorbellId}`);
+    console.log(`[🔔 CAMPAINHA TOCANDO] Destino: ${targetUnit || 'Geral'} (${targetName || ''}) em ${doorbellId}`);
 
     const callPayload = {
       from: socket.id,
       doorbellId,
       targetUnit: targetUnit || null,
       targetResidentId: targetResidentId || null,
+      targetRole: targetRole || null,
+      targetName: targetName || null,
       timestamp: Date.now(),
       visitorInfo: visitorInfo || {}
     };
@@ -424,7 +446,12 @@ io.on('connection', (socket) => {
     // 1. SEMPRE envia para a sala geral da campainha para NUNCA perder chamada
     socket.to(`doorbell:${doorbellId}`).emit('incoming-call', callPayload);
 
-    // 2. Se houver unidade específica, dispara também diretamente para as variações de sala da unidade
+    // 2. Dispara diretamente para cada morador conectado
+    connectedResidents.forEach((res, residentSocketId) => {
+      io.to(residentSocketId).emit('incoming-call', callPayload);
+    });
+
+    // 3. Se houver unidade específica, dispara também diretamente para as variações de sala da unidade
     if (targetUnit) {
       io.to(`unit:${doorbellId}:${targetUnit}`).emit('incoming-call', callPayload);
       io.to(`unit:${doorbellId}:${targetUnit.trim()}`).emit('incoming-call', callPayload);
