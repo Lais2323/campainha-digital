@@ -211,7 +211,7 @@ app.get('/api/version', (req, res) => {
     versionName: '1.3.0',
     versionCode: 3,
     downloadUrl: '/download',
-    changelog: 'Suporte a vizinhos, autenticação por código 960499622@@, foto de perfil e viva-voz'
+    changelog: 'Suporte a vizinhos, autenticação por código seguro, foto de perfil e viva-voz'
   });
 });
 
