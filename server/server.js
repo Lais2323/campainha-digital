@@ -326,10 +326,10 @@ app.get('/download', (req, res) => {
 // Verificação de versão atualizada
 app.get('/api/version', (req, res) => {
   res.json({
-    versionName: '2.6.0',
-    versionCode: 8,
+    versionName: '3.1.0',
+    versionCode: 13,
     downloadUrl: '/download',
-    changelog: 'Controles de mídia para entregador (microfone, viva-voz, câmera, encerrar) e morador iniciando com áudio e viva-voz'
+    changelog: 'Correção de inicialização do app, controles de mídia e estabilidade completa'
   });
 });
 

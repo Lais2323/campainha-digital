@@ -367,17 +367,16 @@
 
   function applyTheme(theme) {
     currentTheme = theme;
-    if (theme === 'light') {
-      document.body.classList.add('light-theme');
-      if (themeIcon) themeIcon.textContent = '☀️';
-      if (themeTitle) themeTitle.textContent = 'Tema Claro';
-      if (themeSubtitle) themeSubtitle.textContent = 'Toque para mudar para Tema Escuro';
-    } else {
-      document.body.classList.remove('light-theme');
-      if (themeIcon) themeIcon.textContent = '🌙';
-      if (themeTitle) themeTitle.textContent = 'Tema Escuro';
-      if (themeSubtitle) themeSubtitle.textContent = 'Toque para mudar para Tema Claro';
+    if (document.body) {
+      if (theme === 'light') {
+        document.body.classList.add('light-theme');
+      } else {
+        document.body.classList.remove('light-theme');
+      }
     }
+    if (themeIcon) themeIcon.textContent = theme === 'light' ? '☀️' : '🌙';
+    if (themeTitle) themeTitle.textContent = theme === 'light' ? 'Tema Claro' : 'Tema Escuro';
+    if (themeSubtitle) themeSubtitle.textContent = theme === 'light' ? 'Toque para mudar para Tema Escuro' : 'Toque para mudar para Tema Claro';
   }
 
   function toggleTheme() {
@@ -775,13 +774,15 @@
   });
 
   // Modal Customizado e Elegante de Sair da Conta (Sem pop-ups com "file://")
-  btnLogout.addEventListener('click', () => {
-    if (modalConfirmLogout) {
-      modalConfirmLogout.classList.add('open');
-    } else {
-      doLogout();
-    }
-  });
+  if (btnLogout) {
+    btnLogout.addEventListener('click', () => {
+      if (modalConfirmLogout) {
+        modalConfirmLogout.classList.add('open');
+      } else {
+        doLogout();
+      }
+    });
+  }
 
   if (btnCancelLogout) {
     btnCancelLogout.addEventListener('click', () => {
@@ -1110,11 +1111,21 @@
       socket.on('webrtc-offer', async ({ offer, from }) => {
         try {
           if (!peerConnection) await createPeerConnection();
+          if (localStream) {
+            localStream.getTracks().forEach(track => {
+              const senders = peerConnection.getSenders();
+              if (!senders.some(s => s.track === track)) {
+                peerConnection.addTrack(track, localStream);
+              }
+            });
+          }
           await peerConnection.setRemoteDescription(new RTCSessionDescription(offer));
           const answer = await peerConnection.createAnswer();
           await peerConnection.setLocalDescription(answer);
           socket.emit('webrtc-answer', { doorbellId: config.doorbellId, answer, to: from });
-        } catch (e) {}
+        } catch (e) {
+          console.error('Erro ao responder oferta WebRTC:', e);
+        }
       });
 
       socket.on('webrtc-answer', async ({ answer }) => {
@@ -1482,31 +1493,40 @@
     }
   }
 
-  // 10. Atender Chamada (VOZ E VÍDEO INICIAM ATIVOS + VIVA-VOZ ATIVO POR PADRÃO)
+  // 10. Atender Chamada (MORADOR: VIVA-VOZ E MICROFONE LIGADOS, CÂMERA DESLIGADA POR PADRÃO)
   async function answerCall() {
     Android.stopDoorbellRingtone();
     switchScreen('incall');
     startCallTimer();
 
-    // 1. Viva-voz ativado automaticamente
+    // 1. Viva-voz ATIVADO por padrão no morador
     isSpeakerOn = true;
     Android.setSpeakerphoneOn(true);
     btnOwnerToggleSpeaker.classList.add('active');
     labelOwnerSpeaker.textContent = 'Viva-Voz';
 
-    // 2. Destaca Unidade e Morador em fonte grande na chamada ativa
+    // 2. Microfone ATIVADO por padrão no morador
+    isMicMuted = false;
+    btnOwnerToggleMic.classList.remove('muted');
+    btnOwnerToggleMic.classList.add('active');
+    labelOwnerMic.textContent = 'Microfone';
+
+    // 3. Câmera do morador DESLIGADA por padrão ("somente o resto liga se achar melhor")
+    isVideoEnabled = false;
+    localVideoTrack = null;
+    ownerLocalVideoContainer.classList.add('hidden');
+    btnOwnerToggleVideo.classList.remove('video-on');
+    labelOwnerVideo.textContent = 'Ligar Vídeo';
+
+    // 4. Destaca Unidade e Morador em fonte grande na chamada ativa
     const unitDisplay = (currentResident && currentResident.unit) ? currentResident.unit : 'CASA 1';
     const nameDisplay = (currentResident && currentResident.name) ? currentResident.name : 'Proprietário(a)';
     if (inCallTargetHouse) inCallTargetHouse.textContent = unitDisplay.toUpperCase();
     if (inCallTargetOwner) inCallTargetOwner.textContent = nameDisplay;
 
-    socket.emit('answer-call', {
-      doorbellId: config.doorbellId,
-      targetVisitorId: currentIncomingCall ? currentIncomingCall.from : null,
-      residentInfo: currentResident
-    });
+    const targetVisitor = currentIncomingCall ? currentIncomingCall.from : null;
 
-    // 3. Inicia chamada com VOZ E VÍDEO ATIVOS AUTOMATICAMENTE
+    // 5. Inicia chamada com ÁUDIO no morador (viva-voz e microfone)
     try {
       localStream = await navigator.mediaDevices.getUserMedia({
         audio: {
@@ -1514,72 +1534,26 @@
           noiseSuppression: true,
           autoGainControl: true
         },
-        video: {
-          facingMode: 'user',
-          width: { ideal: 640 },
-          height: { ideal: 480 }
-        }
+        video: false
       });
 
-      isVideoEnabled = true;
-      localVideoTrack = localStream.getVideoTracks()[0];
-      if (localVideoTrack) {
-        ownerLocalVideo.srcObject = new MediaStream([localVideoTrack]);
-        ownerLocalVideoContainer.classList.remove('hidden');
-        btnOwnerToggleVideo.classList.add('video-on');
-        labelOwnerVideo.textContent = 'Desligar Câmera';
-      }
-    } catch (errVideo) {
-      console.warn('Vídeo indisponível ou negado no morador, iniciando somente áudio:', errVideo);
-      try {
-        localStream = await navigator.mediaDevices.getUserMedia({
-          audio: {
-            echoCancellation: true,
-            noiseSuppression: true,
-            autoGainControl: true
-          },
-          video: false
-        });
-        isVideoEnabled = false;
-        localVideoTrack = null;
-        ownerLocalVideoContainer.classList.add('hidden');
-        btnOwnerToggleVideo.classList.remove('video-on');
-        labelOwnerVideo.textContent = 'Ligar Vídeo';
-      } catch (errAudio) {
-        alert('Permissão de microfone necessária para falar com o visitante.');
-        return;
-      }
-    }
+      localAudioTrack = localStream.getAudioTracks()[0];
+      await createPeerConnection();
 
-    localAudioTrack = localStream.getAudioTracks()[0];
-    isMicMuted = false;
-    btnOwnerToggleMic.classList.remove('muted');
-    labelOwnerMic.textContent = 'Microfone';
+      localStream.getTracks().forEach(track => {
+        peerConnection.addTrack(track, localStream);
+      });
 
-    await createPeerConnection();
-
-    localStream.getTracks().forEach(track => {
-      peerConnection.addTrack(track, localStream);
-    });
-
-    const offer = await peerConnection.createOffer({
-      offerToReceiveAudio: true,
-      offerToReceiveVideo: true
-    });
-    await peerConnection.setLocalDescription(offer);
-
-    socket.emit('webrtc-offer', {
-      doorbellId: config.doorbellId,
-      offer,
-      to: currentIncomingCall ? currentIncomingCall.from : null
-    });
-
-    if (isVideoEnabled) {
-      socket.emit('video-state-changed', {
+      // Emite answer-call para o visitante
+      socket.emit('answer-call', {
         doorbellId: config.doorbellId,
-        isVideoActive: true,
-        to: currentIncomingCall ? currentIncomingCall.from : null
+        targetVisitorId: targetVisitor,
+        residentInfo: currentResident
       });
+
+    } catch (errAudio) {
+      console.warn('Erro ao acessar microfone no morador:', errAudio);
+      alert('Permissão de microfone necessária para falar com o visitante.');
     }
   }
 
