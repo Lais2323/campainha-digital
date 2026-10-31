@@ -33,9 +33,13 @@ import android.webkit.WebView;
 import android.webkit.WebViewClient;
 import android.widget.Toast;
 
+import androidx.activity.OnBackPressedCallback;
+import android.app.NotificationManager;
+import android.app.PendingIntent;
 import androidx.annotation.NonNull;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.app.ActivityCompat;
+import androidx.core.app.NotificationCompat;
 import androidx.core.content.ContextCompat;
 import androidx.core.content.FileProvider;
 
@@ -76,6 +80,14 @@ public class MainActivity extends AppCompatActivity {
         setupWebView();
         checkAndRequestPermissions();
         requestIgnoreBatteryOptimizations();
+
+        // Suporte avançado a Gesto e Botão de Voltar (Android 7 ao Android 14+)
+        getOnBackPressedDispatcher().addCallback(this, new OnBackPressedCallback(true) {
+            @Override
+            public void handleOnBackPressed() {
+                triggerBackPressLogic();
+            }
+        });
 
         try {
             Intent serviceIntent = new Intent(this, DoorbellService.class);
@@ -312,11 +324,31 @@ public class MainActivity extends AppCompatActivity {
                             wakeLock.acquire(30000);
                         }
 
-                        if (!hasWindowFocus()) {
-                            Intent bringToFront = new Intent(MainActivity.this, MainActivity.class);
-                            bringToFront.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_REORDER_TO_FRONT | Intent.FLAG_ACTIVITY_SINGLE_TOP);
-                            startActivity(bringToFront);
+                        // Notificação Heads-Up de ALTA PRIORIDADE com FullScreenIntent (Garante abertura imediata mesmo com tela desligada / 2º plano)
+                        Intent fullScreenIntent = new Intent(MainActivity.this, MainActivity.class);
+                        fullScreenIntent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP);
+                        PendingIntent fullScreenPendingIntent = PendingIntent.getActivity(
+                                MainActivity.this, 100, fullScreenIntent,
+                                Build.VERSION.SDK_INT >= Build.VERSION_CODES.M ? PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE : PendingIntent.FLAG_UPDATE_CURRENT
+                        );
+
+                        NotificationCompat.Builder notifBuilder = new NotificationCompat.Builder(MainActivity.this, DoorbellService.CALLS_CHANNEL_ID)
+                                .setSmallIcon(android.R.drawable.ic_dialog_info)
+                                .setContentTitle("🔔 CAMPAINHA TOCANDO NO PORTÃO!")
+                                .setContentText("Entregador ou visitante aguardando atendimento...")
+                                .setPriority(NotificationCompat.PRIORITY_MAX)
+                                .setCategory(NotificationCompat.CATEGORY_CALL)
+                                .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+                                .setAutoCancel(true)
+                                .setFullScreenIntent(fullScreenPendingIntent, true)
+                                .setContentIntent(fullScreenPendingIntent);
+
+                        NotificationManager notificationManager = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
+                        if (notificationManager != null) {
+                            notificationManager.notify(999, notifBuilder.build());
                         }
+
+                        startActivity(fullScreenIntent);
 
                     } catch (Exception e) {
                         e.printStackTrace();
@@ -340,6 +372,10 @@ public class MainActivity extends AppCompatActivity {
                         }
                         if (wakeLock != null && wakeLock.isHeld()) {
                             wakeLock.release();
+                        }
+                        NotificationManager notificationManager = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
+                        if (notificationManager != null) {
+                            notificationManager.cancel(999);
                         }
                     } catch (Exception e) {
                         e.printStackTrace();
@@ -524,12 +560,57 @@ public class MainActivity extends AppCompatActivity {
         @JavascriptInterface
         public void clearSession() {
             try {
+                // Remove apenas o indicador de sessão ativa; preserva perfis salvos, fotos e preferências
                 getSharedPreferences("doorbell_prefs", Context.MODE_PRIVATE)
                     .edit()
                     .remove("saved_resident")
                     .apply();
             } catch (Exception e) {
                 e.printStackTrace();
+            }
+        }
+
+        @JavascriptInterface
+        public void saveUserProfile(final String code, final String profileJson) {
+            try {
+                getSharedPreferences("doorbell_prefs", Context.MODE_PRIVATE)
+                    .edit()
+                    .putString("profile_" + code, profileJson)
+                    .apply();
+            } catch (Exception e) {
+                e.printStackTrace();
+            }
+        }
+
+        @JavascriptInterface
+        public String getUserProfile(final String code) {
+            try {
+                return getSharedPreferences("doorbell_prefs", Context.MODE_PRIVATE)
+                    .getString("profile_" + code, "");
+            } catch (Exception e) {
+                return "";
+            }
+        }
+
+        @JavascriptInterface
+        public void saveTheme(final String theme) {
+            try {
+                getSharedPreferences("doorbell_prefs", Context.MODE_PRIVATE)
+                    .edit()
+                    .putString("app_theme", theme)
+                    .apply();
+            } catch (Exception e) {
+                e.printStackTrace();
+            }
+        }
+
+        @JavascriptInterface
+        public String getSavedTheme() {
+            try {
+                return getSharedPreferences("doorbell_prefs", Context.MODE_PRIVATE)
+                    .getString("app_theme", "dark");
+            } catch (Exception e) {
+                return "dark";
             }
         }
 
@@ -620,26 +701,30 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
-    @Override
-    public void onBackPressed() {
+    private void triggerBackPressLogic() {
         if (webView != null) {
             webView.evaluateJavascript("(function() { return (window.handleBackPress && window.handleBackPress()) ? 'true' : 'false'; })();", new ValueCallback<String>() {
                 @Override
                 public void onReceiveValue(String value) {
                     if ("\"true\"".equals(value) || "true".equals(value)) {
-                        return; // O evento de voltar foi tratado pela tela ou modal aberta
+                        return; // O evento de voltar foi tratado pela interface web
                     }
                     if (webView.canGoBack()) {
                         webView.goBack();
                     } else {
-                        // Minimiza o aplicativo para segundo plano sem matá-lo, mantendo a escuta das chamadas!
+                        // Minimiza o aplicativo para segundo plano sem finalizá-lo, mantendo a recepção das chamadas!
                         moveTaskToBack(true);
                     }
                 }
             });
         } else {
-            super.onBackPressed();
+            moveTaskToBack(true);
         }
+    }
+
+    @Override
+    public void onBackPressed() {
+        triggerBackPressLogic();
     }
 
     private void promptInstallApk(File apkFile) {

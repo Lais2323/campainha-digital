@@ -1,5 +1,6 @@
 // CLIENTE WEB DO VISITANTE / ENTREGADOR
-// Suporte a seleção de vizinho/morador específico para tocar apenas no celular dele!
+// Controles de mídia no rodapé (Microfone, Viva-Voz, Câmera, Encerrar)
+// Padrão do Entregador: Microfone LIGADO, Viva-Voz LIGADO e Vídeo/Câmera LIGADO por padrão!
 
 (function() {
   'use strict';
@@ -15,8 +16,9 @@
   const doorbellTitleEl = document.getElementById('doorbellTitle');
   const houseAddressEl = document.getElementById('addressText');
   const stateSelectResident = document.getElementById('stateSelectResident');
-  const stateCalling = document.getElementById('stateCalling');
-  const stateInCall = document.getElementById('stateInCall');
+  const stateCall = document.getElementById('stateCall');
+  const callingSection = document.getElementById('callingSection');
+  const inCallSection = document.getElementById('inCallSection');
   const stateEnded = document.getElementById('stateEnded');
 
   const residentsListEl = document.getElementById('residentsList');
@@ -25,9 +27,16 @@
   const callingNotice = document.getElementById('callingNotice');
   const connectedResidentAvatar = document.getElementById('connectedResidentAvatar');
   const inCallBadgeText = document.getElementById('inCallBadgeText');
+  const callTimerEl = document.getElementById('callTimer');
 
-  const btnCancelCall = document.getElementById('btnCancelCall');
-  const btnRestart = document.getElementById('btnRestart');
+  const remoteVideoContainer = document.getElementById('remoteVideoContainer');
+  const remoteVideo = document.getElementById('remoteVideo');
+  const localVideoContainer = document.getElementById('localVideoContainer');
+  const localVideo = document.getElementById('localVideo');
+  const voiceOnlyContainer = document.getElementById('voiceOnlyContainer');
+  const remoteAudio = document.getElementById('remoteAudio');
+
+  // Controles de Mídia do Rodapé
   const btnToggleMic = document.getElementById('btnToggleMic');
   const labelMic = document.getElementById('labelMic');
   const btnToggleSpeaker = document.getElementById('btnToggleSpeaker');
@@ -35,15 +44,7 @@
   const btnToggleVideo = document.getElementById('btnToggleVideo');
   const labelVideo = document.getElementById('labelVideo');
   const btnEndCall = document.getElementById('btnEndCall');
-  let isSpeakerOn = true;
-
-  const remoteAudio = document.getElementById('remoteAudio');
-  const remoteVideo = document.getElementById('remoteVideo');
-  const localVideo = document.getElementById('localVideo');
-  const remoteVideoContainer = document.getElementById('remoteVideoContainer');
-  const localVideoContainer = document.getElementById('localVideoContainer');
-  const voiceOnlyContainer = document.getElementById('voiceOnlyContainer');
-  const callTimerEl = document.getElementById('callTimer');
+  const btnRestart = document.getElementById('btnRestart');
 
   // Variáveis de Estado
   let socket = null;
@@ -51,8 +52,12 @@
   let localStream = null;
   let localAudioTrack = null;
   let localVideoTrack = null;
-  let isVideoEnabled = false;
+
+  // PADRÃO ENTREGADOR: Microfone LIGADO, Viva-Voz LIGADO e Vídeo LIGADO
+  let isVideoEnabled = true;
   let isMicMuted = false;
+  let isSpeakerOn = true;
+
   let callTimerInterval = null;
   let callSeconds = 0;
   let audioContext = null;
@@ -60,22 +65,17 @@
   let connectedOwnerSocketId = null;
   let selectedResident = null;
   let residentsList = [];
-  let pendingIceCandidates = [];
 
   const rtcConfig = {
     iceServers: [
       { urls: 'stun:stun.l.google.com:19302' },
-      { urls: 'stun:stun1.l.google.com:19302' }
+      { urls: 'stun:stun1.l.google.com:19302' },
+      { urls: 'stun:stun2.l.google.com:19302' }
     ]
   };
 
   function initSocket() {
-    socket = io({
-      transports: ['websocket', 'polling'],
-      reconnection: true,
-      reconnectionDelay: 2500,
-      timeout: 20000
-    });
+    socket = io();
 
     socket.on('connect', () => {
       console.log('Conectado ao servidor de campainha!');
@@ -113,9 +113,9 @@
         }
       }
 
-      await startMediaAndWebRTC();
       switchState('incall');
       startTimer();
+      await startMediaAndWebRTC();
     });
 
     socket.on('call-rejected', () => {
@@ -130,102 +130,102 @@
       switchState('ended');
     });
 
-    socket.on('webrtc-offer', async ({ offer, from }) => {
-      try {
-        if (!peerConnection) await createPeerConnection();
-        if (localStream) {
-          localStream.getTracks().forEach(track => {
-            const senders = peerConnection.getSenders();
-            if (!senders.some(s => s.track === track)) {
-              peerConnection.addTrack(track, localStream);
-            }
-          });
-        }
-        await peerConnection.setRemoteDescription(new RTCSessionDescription(offer));
-        flushPendingIceCandidates();
-        const answer = await peerConnection.createAnswer();
-        await peerConnection.setLocalDescription(answer);
-        socket.emit('webrtc-answer', { doorbellId, answer, to: from });
-      } catch (err) {
-        console.error('Erro na oferta WebRTC:', err);
-      }
-    });
-
+    // Resposta WebRTC enviada pelo Morador
     socket.on('webrtc-answer', async ({ answer }) => {
       try {
         if (peerConnection) {
           await peerConnection.setRemoteDescription(new RTCSessionDescription(answer));
-          flushPendingIceCandidates();
         }
       } catch (err) {
-        console.error('Erro na resposta WebRTC:', err);
+        console.error('Erro ao definir resposta WebRTC:', err);
+      }
+    });
+
+    // Caso o morador decida ligar a câmera depois e envie uma oferta de renegociação
+    socket.on('webrtc-offer', async ({ offer, from }) => {
+      try {
+        if (!peerConnection) await createPeerConnection();
+        await peerConnection.setRemoteDescription(new RTCSessionDescription(offer));
+        const answer = await peerConnection.createAnswer();
+        await peerConnection.setLocalDescription(answer);
+        socket.emit('webrtc-answer', { doorbellId, answer, to: from });
+      } catch (err) {
+        console.error('Erro na renegociação WebRTC do morador:', err);
       }
     });
 
     socket.on('webrtc-ice-candidate', async ({ candidate }) => {
       try {
-        if (!candidate) return;
-        if (peerConnection && peerConnection.remoteDescription) {
+        if (peerConnection && candidate) {
           await peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
-        } else {
-          pendingIceCandidates.push(candidate);
         }
       } catch (err) {
-        console.warn('Erro no candidato ICE:', err);
+        console.error('Erro no candidato ICE:', err);
       }
     });
 
-    function flushPendingIceCandidates() {
-      if (!peerConnection || !peerConnection.remoteDescription) return;
-      while (pendingIceCandidates.length > 0) {
-        const c = pendingIceCandidates.shift();
-        peerConnection.addIceCandidate(new RTCIceCandidate(c)).catch(() => {});
-      }
-    }
+    // Notificação de quando o morador liga ou desliga a câmera dele
+    socket.on('video-state-changed', ({ isVideoActive }) => {
+      handleRemoteVideoState(isVideoActive);
+    });
 
     socket.on('remote-video-state-changed', ({ isVideoActive }) => {
-      if (isVideoActive) {
-        remoteVideoContainer.classList.remove('hidden');
-        voiceOnlyContainer.style.opacity = '0.15';
-      } else {
-        remoteVideoContainer.classList.add('hidden');
-        voiceOnlyContainer.style.opacity = '1';
-      }
+      handleRemoteVideoState(isVideoActive);
     });
   }
 
-  // RENDERIZA A LISTA DE MORADORES DISPONÍVEIS PARA LIGAÇÃO (COM AS FOTOS DO APP)
+  function handleRemoteVideoState(isVideoActive) {
+    if (isVideoActive) {
+      remoteVideoContainer.classList.remove('hidden');
+      voiceOnlyContainer.style.opacity = '0.15';
+    } else {
+      remoteVideoContainer.classList.add('hidden');
+      voiceOnlyContainer.style.opacity = '1';
+    }
+  }
+
+  // RENDERIZA A LISTA DE MORADORES
   function renderResidentsSelection() {
-    residentsListEl.innerHTML = '';
-
-    const list = (residentsList && residentsList.length > 0) ? residentsList : [
-      {
-        id: 'usr_admin_1',
-        name: (doorbellTitleEl.textContent && doorbellTitleEl.textContent !== 'Campainha Residencial') ? doorbellTitleEl.textContent : 'Administradora',
-        unit: 'Casa 1',
-        photo: '',
-        role: 'admin'
+    if (!residentsList || residentsList.length === 0) {
+      residentsListEl.innerHTML = `
+        <div style="text-align:center; padding: 24px 12px; width: 100%;">
+          <p style="color:#94a3b8; margin-bottom:16px; font-size: 0.95rem;">Toque abaixo para tocar a campainha da casa:</p>
+          <button type="button" id="btnRingGeneral" class="btn-primary" style="padding:14px 24px; font-size:1.1rem; border-radius:50px; width:100%; max-width: 300px; margin: 0 auto; display: flex; align-items: center; justify-content: center; gap: 8px;">
+            <svg style="width:20px;height:20px;" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M12 22c1.1 0 2-.9 2-2h-4c0 1.1.89 2 2 2zm6-6v-5c0-3.07-1.64-5.64-4.5-6.32V4c0-.83-.67-1.5-1.5-1.5s-1.5.67-1.5 1.5v.68C7.63 5.36 6 7.92 6 11v5l-2 2v1h16v-1l-2-2z"/>
+            </svg>
+            Tocar Campainha
+          </button>
+        </div>
+      `;
+      const btn = document.getElementById('btnRingGeneral');
+      if (btn) {
+        btn.onclick = () => {
+          triggerCallToResident({ id: 'geral', name: 'Residência', unit: 'Casa 1' });
+        };
       }
-    ];
+      return;
+    }
 
-    list.forEach(res => {
+    // Se houver apenas 1 morador cadastrado, toca diretamente
+    if (residentsList.length === 1 && !selectedResident) {
+      triggerCallToResident(residentsList[0]);
+      return;
+    }
+
+    residentsListEl.innerHTML = '';
+    residentsList.forEach(res => {
       const card = document.createElement('div');
       card.className = 'resident-card-btn';
       
       const avatarHtml = res.photo 
         ? `<img class="res-avatar" src="${res.photo}" alt="${res.name}">` 
-        : `<div class="res-avatar res-avatar-initial">${(res.name || 'M').charAt(0).toUpperCase()}</div>`;
+        : `<div class="res-avatar">${(res.name || 'M').charAt(0).toUpperCase()}</div>`;
 
       card.innerHTML = `
         ${avatarHtml}
-        <span class="res-unit-badge">${res.unit || 'Casa 1'}</span>
-        <span class="res-name">${res.name || 'Morador'}</span>
-        <div class="res-call-pill">
-          <svg style="width:13px;height:13px;" viewBox="0 0 24 24" fill="currentColor">
-            <path d="M6.62 10.79c1.44 2.83 3.76 5.14 6.59 6.59l2.2-2.2c.27-.27.67-.36 1.02-.24 1.12.37 2.33.57 3.57.57.55 0 1 .45 1 1V20c0 .55-.45 1-1 1-9.39 0-17-7.61-17-17 0-.55.45-1 1-1h3.5c.55 0 1 .45 1 1 0 1.25.2 2.45.57 3.57.11.35.03.74-.25 1.02l-2.2 2.2z"/>
-          </svg>
-          Ligar
-        </div>
+        <span class="res-unit-badge">${res.unit}</span>
+        <span class="res-name">${res.name}</span>
       `;
 
       card.addEventListener('click', () => {
@@ -236,24 +236,24 @@
     });
   }
 
-  // Tocar para um vizinho / morador específico!
+  // DISPARAR CHAMADA PARA UM MORADOR ESPECÍFICO
   function triggerCallToResident(res) {
     selectedResident = res;
-    callingPillText.textContent = `TOCANDO: ${(res.unit || 'CASA').toUpperCase()}...`;
-    callingTargetTitle.textContent = `${res.name} (${res.unit || 'Casa'})`;
-    callingNotice.innerHTML = `Chamando <strong>${res.name}</strong> na <strong>${res.unit || 'Casa'}</strong>...`;
+    callingPillText.textContent = `TOCANDO: ${res.unit.toUpperCase()}...`;
+    callingTargetTitle.textContent = `${res.name} (${res.unit})`;
+    callingNotice.innerHTML = `Chamando <strong>${res.name}</strong> na <strong>${res.unit}</strong>. O celular deste morador está tocando!`;
 
+    // Entra imediatamente na tela de chamada com os controles visíveis
     switchState('calling');
     playRingbackTone();
-    // Inicia permissão e captura de Câmera + Microfone por padrão!
+
+    // Inicia câmera e microfone por padrão do lado do entregador
     requestMediaEarly();
 
     socket.emit('ring-doorbell', {
       doorbellId,
       targetUnit: res.unit,
       targetResidentId: res.id,
-      targetRole: res.role || (res.isAdmin ? 'admin' : 'user'),
-      targetName: res.name,
       visitorInfo: {
         userAgent: navigator.userAgent,
         time: new Date().toLocaleTimeString('pt-BR')
@@ -261,22 +261,46 @@
     });
   }
 
+  // CONTROLE DE NAVEGAÇÃO DE ESTADOS
   function switchState(state) {
     stateSelectResident.classList.remove('active');
-    stateCalling.classList.remove('active');
-    stateInCall.classList.remove('active');
+    stateCall.classList.remove('active');
     stateEnded.classList.remove('active');
 
-    if (state === 'select') stateSelectResident.classList.add('active');
-    if (state === 'calling') stateCalling.classList.add('active');
-    if (state === 'incall') stateInCall.classList.add('active');
-    if (state === 'ended') stateEnded.classList.add('active');
+    if (state === 'select') {
+      stateSelectResident.classList.add('active');
+    } else if (state === 'calling') {
+      stateCall.classList.add('active');
+      callingSection.classList.remove('hidden');
+      inCallSection.classList.add('hidden');
+    } else if (state === 'incall') {
+      stateCall.classList.add('active');
+      callingSection.classList.add('hidden');
+      inCallSection.classList.remove('hidden');
+    } else if (state === 'ended') {
+      stateEnded.classList.add('active');
+    }
   }
 
-  // SOLICITA CÂMERA (VÍDEO) E MICROFONE POR PADRÃO AO TOCAR A CAMPAINHA
+  // SOLICITA ÁUDIO E VÍDEO CEDO (PADRÃO ENTREGADOR: CÂMERA E MICROFONE ATIVOS)
   async function requestMediaEarly() {
-    if (localStream) return;
+    // Reset de botões para o padrão inicial do entregador
+    isMicMuted = false;
+    isSpeakerOn = true;
+    isVideoEnabled = true;
+
+    btnToggleMic.classList.add('active');
+    btnToggleMic.classList.remove('muted');
+    labelMic.textContent = 'Microfone';
+
+    btnToggleSpeaker.classList.add('active');
+    labelSpeaker.textContent = 'Viva-Voz';
+
+    btnToggleVideo.classList.add('video-on', 'active');
+    labelVideo.textContent = 'Câmera';
+
     try {
+      // Tenta obter ÁUDIO e VÍDEO (câmera frontal por padrão)
       localStream = await navigator.mediaDevices.getUserMedia({
         audio: {
           echoCancellation: true,
@@ -289,18 +313,16 @@
           height: { ideal: 480 }
         }
       });
+
       localAudioTrack = localStream.getAudioTracks()[0];
       localVideoTrack = localStream.getVideoTracks()[0];
 
       if (localVideoTrack) {
-        isVideoEnabled = true;
-        localVideo.srcObject = new MediaStream([localVideoTrack]);
+        localVideo.srcObject = localStream;
         localVideoContainer.classList.remove('hidden');
-        btnToggleVideo.classList.add('video-on');
-        labelVideo.textContent = 'Desativar Vídeo';
       }
     } catch (err) {
-      console.warn('Vídeo negado ou indisponível no navegador, solicitando apenas áudio:', err);
+      console.warn('Não foi possível obter áudio + vídeo juntos, tentando apenas áudio:', err);
       try {
         localStream = await navigator.mediaDevices.getUserMedia({
           audio: {
@@ -314,14 +336,15 @@
         localVideoTrack = null;
         isVideoEnabled = false;
         localVideoContainer.classList.add('hidden');
-        btnToggleVideo.classList.remove('video-on');
-        labelVideo.textContent = 'Ativar Vídeo';
-      } catch (e) {
-        console.error('Microfone negado:', e);
+        btnToggleVideo.classList.remove('video-on', 'active');
+        labelVideo.textContent = 'Câmera Desligada';
+      } catch (errAudio) {
+        console.error('Permissão de microfone negada:', errAudio);
       }
     }
   }
 
+  // GERAR TOM DE CHAMADA (BIP)
   function playRingbackTone() {
     try {
       const AudioCtx = window.AudioContext || window.webkitAudioContext;
@@ -329,7 +352,7 @@
       if (audioContext.state === 'suspended') audioContext.resume();
 
       const playBeep = () => {
-        if (!stateCalling.classList.contains('active')) return;
+        if (!stateCall.classList.contains('active') || callingSection.classList.contains('hidden')) return;
         const osc = audioContext.createOscillator();
         const gain = audioContext.createGain();
         osc.type = 'sine';
@@ -355,56 +378,43 @@
     }
   }
 
+  // INICIALIZA CONEXÃO WEBRTC QUANDO O MORADOR ATENDE
   async function startMediaAndWebRTC() {
     if (!localStream) {
       await requestMediaEarly();
     }
+
     await createPeerConnection();
 
     if (localStream) {
       localStream.getTracks().forEach(track => {
-        const senders = peerConnection.getSenders();
-        if (!senders.some(s => s.track === track)) {
-          peerConnection.addTrack(track, localStream);
-        }
+        peerConnection.addTrack(track, localStream);
       });
     }
 
-    if (isVideoEnabled && localVideoTrack) {
-      localVideo.srcObject = new MediaStream([localVideoTrack]);
-      localVideoContainer.classList.remove('hidden');
-      btnToggleVideo.classList.add('video-on');
-      labelVideo.textContent = 'Desativar Vídeo';
-    }
+    // O entregador inicia a oferta com áudio e vídeo
+    const offer = await peerConnection.createOffer({
+      offerToReceiveAudio: true,
+      offerToReceiveVideo: true
+    });
+    await peerConnection.setLocalDescription(offer);
 
-    if (peerConnection.signalingState === 'stable') {
-      const offer = await peerConnection.createOffer({
-        offerToReceiveAudio: true,
-        offerToReceiveVideo: true
-      });
-      await peerConnection.setLocalDescription(offer);
-
-      socket.emit('webrtc-offer', {
-        doorbellId,
-        offer,
-        to: connectedOwnerSocketId
-      });
-    }
-
-    if (isVideoEnabled) {
-      socket.emit('video-state-changed', {
-        doorbellId,
-        isVideoActive: true,
-        to: connectedOwnerSocketId
-      });
-    }
+    socket.emit('webrtc-offer', {
+      doorbellId,
+      offer,
+      to: connectedOwnerSocketId
+    });
   }
 
   async function createPeerConnection() {
+    if (peerConnection) {
+      try { peerConnection.close(); } catch(e) {}
+    }
+
     peerConnection = new RTCPeerConnection(rtcConfig);
 
     peerConnection.onicecandidate = (event) => {
-      if (event.candidate) {
+      if (event.candidate && connectedOwnerSocketId) {
         socket.emit('webrtc-ice-candidate', {
           doorbellId,
           candidate: event.candidate,
@@ -416,7 +426,8 @@
     peerConnection.ontrack = (event) => {
       if (event.track.kind === 'audio') {
         remoteAudio.srcObject = event.streams[0];
-        remoteAudio.play().catch(e => console.log('Audio play error:', e));
+        remoteAudio.volume = isSpeakerOn ? 1.0 : 0.35;
+        remoteAudio.play().catch(e => console.log('Erro ao reproduzir áudio remoto:', e));
       } else if (event.track.kind === 'video') {
         remoteVideo.srcObject = event.streams[0];
         remoteVideoContainer.classList.remove('hidden');
@@ -432,105 +443,120 @@
     };
   }
 
-  // ATIVAR / DESATIVAR VÍDEO NO RODA-PÉ
+  // 1. MUTAR / DESMUTAR MICROFONE
+  function toggleMic() {
+    isMicMuted = !isMicMuted;
+    if (localAudioTrack) {
+      localAudioTrack.enabled = !isMicMuted;
+    }
+    if (isMicMuted) {
+      btnToggleMic.classList.add('muted');
+      btnToggleMic.classList.remove('active');
+      labelMic.textContent = 'Mudo';
+    } else {
+      btnToggleMic.classList.remove('muted');
+      btnToggleMic.classList.add('active');
+      labelMic.textContent = 'Microfone';
+    }
+  }
+
+  // 2. ALTERNAR VIVA-VOZ
+  function toggleSpeaker() {
+    isSpeakerOn = !isSpeakerOn;
+    if (isSpeakerOn) {
+      btnToggleSpeaker.classList.add('active');
+      labelSpeaker.textContent = 'Viva-Voz';
+      if (remoteAudio) {
+        remoteAudio.volume = 1.0;
+        if (typeof remoteAudio.setSinkId === 'function') {
+          remoteAudio.setSinkId('').catch(() => {});
+        }
+      }
+    } else {
+      btnToggleSpeaker.classList.remove('active');
+      labelSpeaker.textContent = 'Normal';
+      if (remoteAudio) {
+        remoteAudio.volume = 0.35;
+      }
+    }
+  }
+
+  // 3. LIGAR / DESLIGAR CÂMERA DO ENTREGADOR
   async function toggleVideo() {
     if (!isVideoEnabled) {
+      // Ligar Câmera
       try {
-        const videoStream = await navigator.mediaDevices.getUserMedia({
-          video: {
-            facingMode: 'user',
-            width: { ideal: 640 },
-            height: { ideal: 480 }
+        if (!localVideoTrack || localVideoTrack.readyState === 'ended') {
+          const videoStream = await navigator.mediaDevices.getUserMedia({
+            video: {
+              facingMode: 'user',
+              width: { ideal: 640 },
+              height: { ideal: 480 }
+            }
+          });
+          localVideoTrack = videoStream.getVideoTracks()[0];
+          if (localStream) {
+            localStream.addTrack(localVideoTrack);
+          } else {
+            localStream = videoStream;
           }
-        });
+          if (peerConnection) {
+            const senders = peerConnection.getSenders();
+            const videoSender = senders.find(s => s.track && s.track.kind === 'video');
+            if (videoSender) {
+              videoSender.replaceTrack(localVideoTrack);
+            } else {
+              peerConnection.addTrack(localVideoTrack, localStream);
+              const offer = await peerConnection.createOffer();
+              await peerConnection.setLocalDescription(offer);
+              socket.emit('webrtc-offer', { doorbellId, offer, to: connectedOwnerSocketId });
+            }
+          }
+        } else {
+          localVideoTrack.enabled = true;
+        }
 
-        localVideoTrack = videoStream.getVideoTracks()[0];
         localVideo.srcObject = new MediaStream([localVideoTrack]);
         localVideoContainer.classList.remove('hidden');
-
-        if (localStream) {
-          localStream.addTrack(localVideoTrack);
-        } else {
-          localStream = videoStream;
-        }
-
-        if (peerConnection) {
-          const senders = peerConnection.getSenders();
-          const videoSender = senders.find(s => s.track && s.track.kind === 'video');
-
-          if (videoSender) {
-            await videoSender.replaceTrack(localVideoTrack);
-          } else {
-            peerConnection.addTrack(localVideoTrack, localStream);
-            const offer = await peerConnection.createOffer();
-            await peerConnection.setLocalDescription(offer);
-            socket.emit('webrtc-offer', { doorbellId, offer, to: connectedOwnerSocketId });
-          }
-        }
-
         isVideoEnabled = true;
-        btnToggleVideo.classList.add('video-on');
-        labelVideo.textContent = 'Desativar Vídeo';
-        socket.emit('video-state-changed', { doorbellId, isVideoActive: true, to: connectedOwnerSocketId });
+        btnToggleVideo.classList.add('video-on', 'active');
+        labelVideo.textContent = 'Câmera';
 
+        if (connectedOwnerSocketId) {
+          socket.emit('video-state-changed', { doorbellId, isVideoActive: true, to: connectedOwnerSocketId });
+        }
       } catch (err) {
         alert('Não foi possível ativar a câmera.');
       }
     } else {
-      if (localVideoTrack) {
-        localVideoTrack.stop();
-        if (peerConnection) {
-          const senders = peerConnection.getSenders();
-          const videoSender = senders.find(s => s.track && s.track.kind === 'video');
-          if (videoSender) {
-            peerConnection.removeTrack(videoSender);
-            const offer = await peerConnection.createOffer();
-            await peerConnection.setLocalDescription(offer);
-            socket.emit('webrtc-offer', { doorbellId, offer, to: connectedOwnerSocketId });
-          }
-        }
-        localVideoTrack = null;
-      }
-      localVideo.srcObject = null;
-      localVideoContainer.classList.add('hidden');
-
+      // Desligar Câmera
       isVideoEnabled = false;
-      btnToggleVideo.classList.remove('video-on');
-      labelVideo.textContent = 'Ativar Vídeo';
-      socket.emit('video-state-changed', { doorbellId, isVideoActive: false, to: connectedOwnerSocketId });
-    }
-  }
+      if (localVideoTrack) {
+        localVideoTrack.enabled = false;
+      }
+      localVideoContainer.classList.add('hidden');
+      btnToggleVideo.classList.remove('video-on', 'active');
+      labelVideo.textContent = 'Câmera Desligada';
 
-  function toggleMic() {
-    if (localAudioTrack) {
-      isMicMuted = !isMicMuted;
-      localAudioTrack.enabled = !isMicMuted;
-      if (isMicMuted) {
-        btnToggleMic.classList.add('muted');
-        labelMic.textContent = 'Voz Mudo';
-      } else {
-        btnToggleMic.classList.remove('muted');
-        labelMic.textContent = 'Voz Ativa';
+      if (connectedOwnerSocketId) {
+        socket.emit('video-state-changed', { doorbellId, isVideoActive: false, to: connectedOwnerSocketId });
       }
     }
   }
 
-  function toggleSpeaker() {
-    isSpeakerOn = !isSpeakerOn;
-    if (remoteAudio) {
-      remoteAudio.muted = !isSpeakerOn;
+  // 4. ENCERRAR OU CANCELAR CHAMADA
+  function endCall() {
+    stopRingbackTone();
+    if (callingSection && !callingSection.classList.contains('hidden')) {
+      socket.emit('reject-call', { doorbellId });
+    } else {
+      socket.emit('end-call', { doorbellId });
     }
-    if (btnToggleSpeaker) {
-      if (isSpeakerOn) {
-        btnToggleSpeaker.classList.add('active');
-        if (labelSpeaker) labelSpeaker.textContent = 'Viva-Voz';
-      } else {
-        btnToggleSpeaker.classList.remove('active');
-        if (labelSpeaker) labelSpeaker.textContent = 'Mudo';
-      }
-    }
+    cleanupMedia();
+    switchState('ended');
   }
 
+  // CRONÔMETRO DE CHAMADA
   function startTimer() {
     callSeconds = 0;
     callTimerEl.textContent = '00:00';
@@ -578,30 +604,26 @@
     remoteVideoContainer.classList.add('hidden');
     voiceOnlyContainer.style.opacity = '1';
 
-    isVideoEnabled = false;
-    btnToggleVideo.classList.remove('video-on');
-    labelVideo.textContent = 'Ativar Vídeo';
-    pendingIceCandidates = [];
+    isVideoEnabled = true;
+    isMicMuted = false;
+    isSpeakerOn = true;
+    connectedOwnerSocketId = null;
   }
 
-  btnCancelCall.addEventListener('click', () => {
-    stopRingbackTone();
-    socket.emit('reject-call', { doorbellId });
-    switchState('select');
-  });
-
+  // EVENT LISTENERS DOS CONTROLES
   btnToggleMic.addEventListener('click', toggleMic);
-  if (btnToggleSpeaker) btnToggleSpeaker.addEventListener('click', toggleSpeaker);
+  btnToggleSpeaker.addEventListener('click', toggleSpeaker);
   btnToggleVideo.addEventListener('click', toggleVideo);
-
-  btnEndCall.addEventListener('click', () => {
-    socket.emit('end-call', { doorbellId });
-    cleanupMedia();
-    switchState('ended');
-  });
+  btnEndCall.addEventListener('click', endCall);
 
   btnRestart.addEventListener('click', () => {
-    switchState('select');
+    if (residentsList.length > 1) {
+      switchState('select');
+    } else if (residentsList.length === 1) {
+      triggerCallToResident(residentsList[0]);
+    } else {
+      switchState('select');
+    }
   });
 
   initSocket();

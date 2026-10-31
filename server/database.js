@@ -157,13 +157,50 @@ const Database = {
     }
   },
 
-  // Lista todos os usuários (apenas Administrador pode acessar)
-  getAllUsers() {
+  // Lista usuários (Administrador pode ver com códigos, visitantes sem códigos)
+  getAllUsers(includeCodes = false) {
     if (isNativeSqlite) {
-      return db.prepare("SELECT id, email, name, unit, photo, role, created_at, invited_by FROM users ORDER BY role DESC, created_at ASC").all();
+      if (includeCodes) {
+        return db.prepare("SELECT id, email, name, unit, photo, role, access_code, created_at, invited_by FROM users ORDER BY role DESC, created_at ASC").all();
+      } else {
+        return db.prepare("SELECT id, email, name, unit, photo, role, created_at, invited_by FROM users ORDER BY role DESC, created_at ASC").all();
+      }
     } else {
-      return fallbackData.users.map(({ access_code, ...u }) => u);
+      if (includeCodes) {
+        return [...fallbackData.users];
+      } else {
+        return fallbackData.users.map(({ access_code, ...u }) => u);
+      }
     }
+  },
+
+  // Personalizar código de acesso do morador (Apenas Administradora)
+  updateUserAccessCode(userId, newCode) {
+    if (!newCode || !newCode.trim()) {
+      return { success: false, error: 'O código de acesso não pode ser vazio.' };
+    }
+    const cleanCode = newCode.trim();
+    const existing = this.findUserById(userId);
+    if (!existing) {
+      return { success: false, error: 'Morador não encontrado.' };
+    }
+
+    const codeInUse = this.findUserByCode(cleanCode);
+    if (codeInUse && codeInUse.id !== userId) {
+      return { success: false, error: 'Este código de acesso já está em uso por outro morador.' };
+    }
+
+    if (isNativeSqlite) {
+      db.prepare("UPDATE users SET access_code = ? WHERE id = ?").run(cleanCode, userId);
+    } else {
+      const u = fallbackData.users.find(u => u.id === userId);
+      if (u) {
+        u.access_code = cleanCode;
+        saveFallback();
+      }
+    }
+    console.log(`[RBAC] Código de acesso atualizado para o morador ${existing.name} (${existing.unit}): ${cleanCode}`);
+    return { success: true, user: this.findUserById(userId) };
   },
 
   // Criar Usuário (ou atualizar)
@@ -177,9 +214,10 @@ const Database = {
             unit = ?, 
             photo = ?, 
             email = COALESCE(?, email),
-            role = COALESCE(?, role)
+            role = COALESCE(?, role),
+            access_code = COALESCE(?, access_code)
           WHERE id = ?
-        `).run(user.name, user.unit, user.photo || '', user.email || null, user.role || null, user.id);
+        `).run(user.name, user.unit, user.photo || '', user.email || null, user.role || null, user.access_code || null, user.id);
       } else {
         db.prepare(`
           INSERT INTO users (id, email, name, unit, photo, role, access_code, created_at, invited_by)

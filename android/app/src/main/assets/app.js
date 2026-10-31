@@ -7,6 +7,7 @@
   const MASTER_CODE = '960499622@@';
   const STORAGE_RESIDENT = 'campainha_resident_user';
   const STORAGE_CONFIG = 'campainha_config';
+  const STORAGE_SAVED_PROFILES = 'campainha_saved_profiles';
 
   let config = {
     doorbellId: 'minha-casa',
@@ -46,7 +47,6 @@
   }
 
   // Banco local persistente de perfis salvos (Admin e Usuários Padrão)
-  const STORAGE_SAVED_PROFILES = 'campainha_saved_profiles';
   let savedProfiles = {};
   try {
     const sp = localStorage.getItem(STORAGE_SAVED_PROFILES);
@@ -64,14 +64,13 @@
   let localStream = null;
   let localAudioTrack = null;
   let localVideoTrack = null;
-  let isVideoEnabled = false;
+  let isVideoEnabled = true;
   let isMicMuted = false;
-  let isSpeakerOn = true; // VIVA-VOZ ATIVO POR PADRÃO!
+  let isSpeakerOn = true; // VIVA-VOZ ATIVO POR PADRÃO EM AMBOS OS DISPOSITIVOS!
   let callTimerInterval = null;
   let callSeconds = 0;
   let currentIncomingCall = null;
   let allResidentsList = [];
-  let queuedIceCandidates = [];
 
   const rtcConfig = {
     iceServers: [
@@ -97,7 +96,6 @@
   const setupTitle = document.getElementById('setupTitle');
   const setupSubtitle = document.getElementById('setupSubtitle');
   const setupRoleBadge = document.getElementById('setupRoleBadge');
-  const avatarPreviewContainer = document.getElementById('avatarPreviewContainer');
   const avatarPreviewImg = document.getElementById('avatarPreviewImg');
   const avatarPlaceholder = document.getElementById('avatarPlaceholder');
   const avatarFileInput = document.getElementById('avatarFileInput');
@@ -105,6 +103,7 @@
   const setupName = document.getElementById('setupName');
   const setupUnit = document.getElementById('setupUnit');
   const btnSaveProfileSetup = document.getElementById('btnSaveProfileSetup');
+  const btnAdminManageCodesFromProfile = document.getElementById('btnAdminManageCodesFromProfile');
 
   // Dashboard
   const dashRoleBadge = document.getElementById('dashRoleBadge');
@@ -118,6 +117,36 @@
   const modalConfirmLogout = document.getElementById('modalConfirmLogout');
   const btnCancelLogout = document.getElementById('btnCancelLogout');
   const btnConfirmLogout = document.getElementById('btnConfirmLogout');
+
+  // Menu Hambúrguer & Tema
+  const btnHamburger = document.getElementById('btnHamburger');
+  const hamburgerDrawer = document.getElementById('hamburgerDrawer');
+  const hamburgerOverlay = document.getElementById('hamburgerOverlay');
+  const btnCloseHamburger = document.getElementById('btnCloseHamburger');
+  const btnToggleTheme = document.getElementById('btnToggleTheme');
+  const themeIcon = document.getElementById('themeIcon');
+  const themeTitle = document.getElementById('themeTitle');
+  const themeSubtitle = document.getElementById('themeSubtitle');
+  const menuItemProfile = document.getElementById('menuItemProfile');
+  const menuItemResidents = document.getElementById('menuItemResidents');
+  const menuItemConfig = document.getElementById('menuItemConfig');
+  const menuItemSign = document.getElementById('menuItemSign');
+  const menuItemLogout = document.getElementById('menuItemLogout');
+  const drawerAvatarImg = document.getElementById('drawerAvatarImg');
+  const drawerAvatarInitial = document.getElementById('drawerAvatarInitial');
+  const drawerUserName = document.getElementById('drawerUserName');
+  const drawerUserUnit = document.getElementById('drawerUserUnit');
+  const drawerRoleBadge = document.getElementById('drawerRoleBadge');
+
+  // Modal Customizar Código de Acesso
+  const modalEditAccessCode = document.getElementById('modalEditAccessCode');
+  const btnCloseEditCodeModal = document.getElementById('btnCloseEditCodeModal');
+  const editCodeResidentInfo = document.getElementById('editCodeResidentInfo');
+  const inputCustomAccessCode = document.getElementById('inputCustomAccessCode');
+  const btnCancelEditCode = document.getElementById('btnCancelEditCode');
+  const btnSaveCustomCode = document.getElementById('btnSaveCustomCode');
+  let editingResidentId = null;
+
   const updateBanner = document.getElementById('updateBanner');
   const updateText = document.getElementById('updateText');
   const btnDownloadUpdate = document.getElementById('btnDownloadUpdate');
@@ -137,12 +166,16 @@
 
   // Chamada Chegando
   const incomingTargetBadge = document.getElementById('incomingTargetBadge');
+  const incomingHouseUnit = document.getElementById('incomingHouseUnit');
+  const incomingOwnerName = document.getElementById('incomingOwnerName');
   const incomingAddress = document.getElementById('incomingAddress');
   const incomingTime = document.getElementById('incomingTime');
   const btnAnswerCall = document.getElementById('btnAnswerCall');
   const btnRejectCall = document.getElementById('btnRejectCall');
 
   // Chamada Ativa
+  const inCallTargetHouse = document.getElementById('inCallTargetHouse');
+  const inCallTargetOwner = document.getElementById('inCallTargetOwner');
   const ownerVoiceContainer = document.getElementById('ownerVoiceContainer');
   const ownerRemoteVideoContainer = document.getElementById('ownerRemoteVideoContainer');
   const ownerLocalVideoContainer = document.getElementById('ownerLocalVideoContainer');
@@ -218,6 +251,28 @@
       if (window.AndroidBridge && window.AndroidBridge.stopDoorbellRingtone) {
         window.AndroidBridge.stopDoorbellRingtone();
       }
+    },
+    saveUserProfile: (code, json) => {
+      if (window.AndroidBridge && window.AndroidBridge.saveUserProfile) {
+        try { window.AndroidBridge.saveUserProfile(code, json); } catch(e) {}
+      }
+    },
+    getUserProfile: (code) => {
+      if (window.AndroidBridge && window.AndroidBridge.getUserProfile) {
+        try { return window.AndroidBridge.getUserProfile(code); } catch(e) {}
+      }
+      return "";
+    },
+    saveTheme: (theme) => {
+      if (window.AndroidBridge && window.AndroidBridge.saveTheme) {
+        try { window.AndroidBridge.saveTheme(theme); } catch(e) {}
+      }
+    },
+    getSavedTheme: () => {
+      if (window.AndroidBridge && window.AndroidBridge.getSavedTheme) {
+        try { return window.AndroidBridge.getSavedTheme(); } catch(e) {}
+      }
+      return "dark";
     },
     setSpeakerphoneOn: (on) => {
       if (window.AndroidBridge && window.AndroidBridge.setSpeakerphoneOn) {
@@ -299,6 +354,182 @@
     }
   };
 
+  // ==================== TEMA CLARO & ESCURO ====================
+  let currentTheme = 'dark';
+  function initTheme() {
+    let saved = localStorage.getItem('campainha_theme');
+    if (!saved && Android.getSavedTheme) {
+      try { saved = Android.getSavedTheme(); } catch(e) {}
+    }
+    currentTheme = saved === 'light' ? 'light' : 'dark';
+    applyTheme(currentTheme);
+  }
+
+  function applyTheme(theme) {
+    currentTheme = theme;
+    if (theme === 'light') {
+      document.body.classList.add('light-theme');
+      if (themeIcon) themeIcon.textContent = '☀️';
+      if (themeTitle) themeTitle.textContent = 'Tema Claro';
+      if (themeSubtitle) themeSubtitle.textContent = 'Toque para mudar para Tema Escuro';
+    } else {
+      document.body.classList.remove('light-theme');
+      if (themeIcon) themeIcon.textContent = '🌙';
+      if (themeTitle) themeTitle.textContent = 'Tema Escuro';
+      if (themeSubtitle) themeSubtitle.textContent = 'Toque para mudar para Tema Claro';
+    }
+  }
+
+  function toggleTheme() {
+    const nextTheme = currentTheme === 'dark' ? 'light' : 'dark';
+    applyTheme(nextTheme);
+    localStorage.setItem('campainha_theme', nextTheme);
+    Android.saveTheme(nextTheme);
+    Android.showToast(nextTheme === 'light' ? '☀️ Tema Claro ativado' : '🌙 Tema Escuro ativado');
+  }
+
+  // ==================== PERFIS PERSISTENTES ====================
+  function getPersistentProfile(code) {
+    if (!code) return null;
+    let prof = savedProfiles[code] || null;
+    if (!prof) {
+      const nativeStr = Android.getUserProfile(code);
+      if (nativeStr) {
+        try {
+          prof = JSON.parse(nativeStr);
+          savedProfiles[code] = prof;
+        } catch(e) {}
+      }
+    }
+    return prof;
+  }
+
+  function savePersistentProfile(code, profile) {
+    if (!code || !profile) return;
+    savedProfiles[code] = { ...profile, code };
+    localStorage.setItem(STORAGE_SAVED_PROFILES, JSON.stringify(savedProfiles));
+    Android.saveUserProfile(code, JSON.stringify(profile));
+  }
+
+  // ==================== CONTROLE DO MENU HAMBÚRGUER ====================
+  function openHamburger() {
+    if (hamburgerDrawer && hamburgerOverlay) {
+      hamburgerDrawer.classList.add('open');
+      hamburgerOverlay.classList.add('open');
+    }
+  }
+
+  function closeHamburger() {
+    if (hamburgerDrawer && hamburgerOverlay) {
+      hamburgerDrawer.classList.remove('open');
+      hamburgerOverlay.classList.remove('open');
+    }
+  }
+
+  if (btnHamburger) btnHamburger.addEventListener('click', openHamburger);
+  if (btnCloseHamburger) btnCloseHamburger.addEventListener('click', closeHamburger);
+  if (hamburgerOverlay) hamburgerOverlay.addEventListener('click', closeHamburger);
+  if (btnToggleTheme) btnToggleTheme.addEventListener('click', toggleTheme);
+
+  if (menuItemProfile) {
+    menuItemProfile.addEventListener('click', () => {
+      closeHamburger();
+      if (btnEditMyProfile) btnEditMyProfile.click();
+    });
+  }
+  if (menuItemResidents) {
+    menuItemResidents.addEventListener('click', () => {
+      closeHamburger();
+      if (btnOpenResidentsModal) btnOpenResidentsModal.click();
+    });
+  }
+  if (menuItemConfig) {
+    menuItemConfig.addEventListener('click', () => {
+      closeHamburger();
+      if (btnOpenConfigModal) btnOpenConfigModal.click();
+    });
+  }
+  if (menuItemSign) {
+    menuItemSign.addEventListener('click', () => {
+      closeHamburger();
+      if (btnOpenSignModal) btnOpenSignModal.click();
+    });
+  }
+  if (menuItemLogout) {
+    menuItemLogout.addEventListener('click', () => {
+      closeHamburger();
+      if (modalConfirmLogout) modalConfirmLogout.classList.add('open');
+      else doLogout();
+    });
+  }
+
+  // ==================== PERSONALIZAÇÃO DE CÓDIGOS DE ACESSO (ADMIN) ====================
+  if (btnAdminManageCodesFromProfile) {
+    btnAdminManageCodesFromProfile.addEventListener('click', () => {
+      switchScreen('dashboard');
+      if (btnOpenResidentsModal) btnOpenResidentsModal.click();
+      switchMgrTab('users');
+    });
+  }
+
+  if (btnCloseEditCodeModal) {
+    btnCloseEditCodeModal.addEventListener('click', () => {
+      if (modalEditAccessCode) modalEditAccessCode.classList.remove('open');
+    });
+  }
+  if (btnCancelEditCode) {
+    btnCancelEditCode.addEventListener('click', () => {
+      if (modalEditAccessCode) modalEditAccessCode.classList.remove('open');
+    });
+  }
+
+  if (btnSaveCustomCode) {
+    btnSaveCustomCode.addEventListener('click', async () => {
+      if (!editingResidentId) return;
+      const newCode = (inputCustomAccessCode.value || '').trim();
+      if (!newCode) {
+        alert('Por favor, informe o novo código de acesso.');
+        return;
+      }
+
+      btnSaveCustomCode.disabled = true;
+      btnSaveCustomCode.textContent = 'Salvando...';
+
+      try {
+        const res = await fetch(`${config.serverUrl.replace(/\/$/, '')}/api/admin/users/${editingResidentId}/code`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            adminCode: MASTER_CODE,
+            newCode: newCode
+          })
+        });
+
+        const data = await res.json();
+        if (res.ok && data.success) {
+          Android.showToast('Código de acesso atualizado!');
+          if (modalEditAccessCode) modalEditAccessCode.classList.remove('open');
+          
+          // Atualiza lista local
+          const target = allResidentsList.find(u => u.id === editingResidentId);
+          if (target) {
+            target.access_code = newCode;
+            target.code = newCode;
+            savePersistentProfile(newCode, target);
+          }
+          renderResidentsManager();
+        } else {
+          alert('Erro ao atualizar código: ' + (data.error || 'Tente novamente.'));
+        }
+      } catch (err) {
+        alert('Erro ao conectar com o servidor para salvar o código.');
+      } finally {
+        btnSaveCustomCode.disabled = false;
+        btnSaveCustomCode.textContent = 'Salvar Código';
+      }
+    });
+  }
+
   // 1. Navegação de Telas
   function switchScreen(viewName) {
     viewLogin.classList.remove('active');
@@ -323,9 +554,21 @@
     btnVerifyCode.textContent = 'Verificando...';
 
     try {
-      let verified = false;
+      // 1. Se houver perfil já salvo localmente para este código, entra direto sem pedir setup!
+      const cachedProfile = getPersistentProfile(code);
+      if (cachedProfile && cachedProfile.name) {
+        codeErrorMsg.classList.add('hidden');
+        currentResident = cachedProfile;
+        currentResident.code = code;
+        currentResident.isAdmin = (currentResident.role === 'admin' || code === MASTER_CODE);
+        saveResidentLocally();
+        renderDashboard();
+        connectSocket();
+        switchScreen('dashboard');
+        return;
+      }
 
-      // 1. Tenta validar no servidor SQLite
+      // 2. Tenta validar no servidor SQLite
       if (config.serverUrl) {
         try {
           const res = await fetch(`${config.serverUrl.replace(/\/$/, '')}/api/auth/verify-code`, {
@@ -336,20 +579,9 @@
 
           if (res.ok) {
             const data = await res.json();
-            verified = true;
             codeErrorMsg.classList.add('hidden');
 
             if (data.type === 'invite') {
-              if (savedProfiles[code] && savedProfiles[code].name) {
-                // Perfil já configurado anteriormente no aparelho
-                currentResident = savedProfiles[code];
-                currentResident.code = code;
-                saveResidentLocally();
-                renderDashboard();
-                connectSocket();
-                switchScreen('dashboard');
-                return;
-              }
               // Convite pendente para Convidado novo
               pendingInvite = data.invite;
               setupTitle.textContent = '🎉 Cadastro de Convidado';
@@ -363,14 +595,15 @@
               return;
             } else if (data.type === 'user') {
               // Usuário já cadastrado (Admin ou Convidado)
-              const localCached = savedProfiles[code] || {};
+              const localCached = getPersistentProfile(code) || {};
               currentResident = { ...localCached, ...data.user };
               if (!currentResident.photo && localCached.photo) {
                 currentResident.photo = localCached.photo;
               }
               currentResident.code = code;
-              currentResident.isAdmin = (currentResident.role === 'admin');
+              currentResident.isAdmin = (currentResident.role === 'admin' || code === MASTER_CODE);
               saveResidentLocally();
+              savePersistentProfile(code, currentResident);
               renderDashboard();
               connectSocket();
               switchScreen('dashboard');
@@ -380,23 +613,10 @@
         } catch(netErr) {}
       }
 
-      // 2. Se houver perfil já salvo neste aparelho para este código (Admin ou Morador)
-      if (savedProfiles[code] && savedProfiles[code].name) {
-        codeErrorMsg.classList.add('hidden');
-        currentResident = savedProfiles[code];
-        currentResident.code = code;
-        currentResident.isAdmin = (currentResident.role === 'admin');
-        saveResidentLocally();
-        renderDashboard();
-        connectSocket();
-        switchScreen('dashboard');
-        return;
-      }
-
       // 3. Fallback offline local para a Administradora (código mestre)
       if (code === MASTER_CODE) {
         codeErrorMsg.classList.add('hidden');
-        const adminCached = savedProfiles[MASTER_CODE] || {
+        const adminCached = getPersistentProfile(MASTER_CODE) || {
           id: 'usr_admin_1',
           name: 'Administradora',
           unit: 'Casa 1',
@@ -407,18 +627,18 @@
         };
         currentResident = adminCached;
         saveResidentLocally();
+        savePersistentProfile(MASTER_CODE, currentResident);
         renderDashboard();
         connectSocket();
         switchScreen('dashboard');
         return;
       }
 
-      // Se o código não foi reconhecido pelo servidor nem localmente:
+      // Se não foi aceito em nenhuma verificação
       codeErrorMsg.classList.remove('hidden');
       codeErrorMsg.textContent = 'Código de acesso ou convite incorreto. Tente novamente.';
     } catch (err) {
-      codeErrorMsg.classList.remove('hidden');
-      codeErrorMsg.textContent = 'Erro ao processar login. Tente novamente.';
+      console.error(err);
     } finally {
       btnVerifyCode.disabled = false;
       btnVerifyCode.textContent = 'Entrar no Aplicativo';
@@ -427,12 +647,6 @@
 
   btnToggleShowCode.addEventListener('click', () => {
     inputAccessCode.type = inputAccessCode.type === 'password' ? 'text' : 'password';
-  });
-
-  inputAccessCode.addEventListener('keyup', (e) => {
-    if (e.key === 'Enter') {
-      btnVerifyCode.click();
-    }
   });
 
   // 3. Escolher Foto de Perfil
@@ -488,8 +702,10 @@
           currentResident = data.user;
           currentResident.isAdmin = false;
           currentResident.role = 'user';
+          currentResident.code = pendingInvite.code;
           pendingInvite = null;
           saveResidentLocally();
+          savePersistentProfile(currentResident.code, currentResident);
           renderDashboard();
           connectSocket();
           switchScreen('dashboard');
@@ -525,6 +741,7 @@
     }
 
     saveResidentLocally();
+    savePersistentProfile(currentResident.code || MASTER_CODE, currentResident);
     renderDashboard();
     connectSocket();
     syncResidentWithServer();
@@ -540,6 +757,12 @@
     setupName.value = currentResident.name || '';
     setupUnit.value = currentResident.unit || '';
     setupUnit.disabled = !isAdmin;
+
+    if (btnAdminManageCodesFromProfile) {
+      if (isAdmin) btnAdminManageCodesFromProfile.classList.remove('hidden');
+      else btnAdminManageCodesFromProfile.classList.add('hidden');
+    }
+
     if (currentResident.photo) {
       avatarPreviewImg.src = currentResident.photo;
       avatarPreviewImg.classList.remove('hidden');
@@ -588,8 +811,7 @@
     if (currentResident) {
       const codeKey = currentResident.code || currentResident.access_code || (currentResident.role === 'admin' ? MASTER_CODE : null);
       if (codeKey) {
-        savedProfiles[codeKey] = { ...currentResident, code: codeKey };
-        localStorage.setItem(STORAGE_SAVED_PROFILES, JSON.stringify(savedProfiles));
+        savePersistentProfile(codeKey, currentResident);
       }
       const json = JSON.stringify(currentResident);
       localStorage.setItem(STORAGE_RESIDENT, json);
@@ -626,6 +848,14 @@
       }
     }
 
+    // Informações no Menu Hambúrguer Drawer
+    if (drawerUserName) drawerUserName.textContent = currentResident.name;
+    if (drawerUserUnit) drawerUserUnit.textContent = currentResident.unit;
+    if (drawerRoleBadge) {
+      drawerRoleBadge.className = isAdmin ? 'badge-role-admin' : 'badge-role-user';
+      drawerRoleBadge.textContent = isAdmin ? '👑 Admin' : '👤 Convidado';
+    }
+
     // AVISO VISÍVEL APENAS PARA USUÁRIO PADRÃO
     if (standardUserBanner) {
       if (isAdmin) {
@@ -650,10 +880,22 @@
       dashAvatarImg.src = currentResident.photo;
       dashAvatarImg.classList.remove('hidden');
       dashAvatarInitial.classList.add('hidden');
+
+      if (drawerAvatarImg && drawerAvatarInitial) {
+        drawerAvatarImg.src = currentResident.photo;
+        drawerAvatarImg.classList.remove('hidden');
+        drawerAvatarInitial.classList.add('hidden');
+      }
     } else {
       dashAvatarImg.classList.add('hidden');
       dashAvatarInitial.classList.remove('hidden');
       dashAvatarInitial.textContent = currentResident.name.charAt(0).toUpperCase();
+
+      if (drawerAvatarImg && drawerAvatarInitial) {
+        drawerAvatarImg.classList.add('hidden');
+        drawerAvatarInitial.classList.remove('hidden');
+        drawerAvatarInitial.textContent = currentResident.name.charAt(0).toUpperCase();
+      }
     }
 
     dashDoorbellTitle.textContent = config.title;
@@ -682,7 +924,7 @@
       const res = await fetch(`${config.serverUrl.replace(/\/$/, '')}/api/version`);
       if (res.ok) {
         const data = await res.json();
-        let currentVersionCode = 12;
+        let currentVersionCode = 7;
         if (window.AndroidBridge && window.AndroidBridge.getAppVersionCode) {
           try {
             currentVersionCode = window.AndroidBridge.getAppVersionCode();
@@ -723,48 +965,17 @@
     });
   }
 
-  let currentConnectedUrl = '';
-
-  // 7. Conexão em Tempo Real (Socket.io Estável)
+  // 7. Conexão em Tempo Real (Socket.io)
   function connectSocket() {
-    // Evita reconectar se o socket já estiver conectado na mesma URL do servidor
-    if (socket && socket.connected && currentConnectedUrl === config.serverUrl) {
-      console.log('Socket já conectado e ativo.');
-      return;
-    }
-
-    if (!config.serverUrl) {
-      if (connStatusText) {
-        connStatusText.textContent = '🔴 Servidor não configurado';
-        connStatusText.style.color = '#ef4444';
-      }
-      return;
-    }
-
-    currentConnectedUrl = config.serverUrl;
-
-    if (socket) {
-      try {
-        socket.removeAllListeners();
-        socket.disconnect();
-      } catch(e) {}
-      socket = null;
-    }
+    if (socket) socket.disconnect();
 
     try {
       socket = io(config.serverUrl, {
-        transports: ['websocket', 'polling'],
-        upgrade: true,
         reconnection: true,
-        reconnectionAttempts: Infinity,
-        reconnectionDelay: 2500,
-        reconnectionDelayMax: 10000,
-        timeout: 20000,
-        autoConnect: true
+        reconnectionDelay: 1000
       });
 
       socket.on('connect', () => {
-        console.log('[Socket] Conectado com sucesso ao servidor:', config.serverUrl);
         const unitName = (currentResident && currentResident.unit) ? currentResident.unit : 'Geral';
         if (connStatusText) {
           connStatusText.textContent = `🟢 Conectado (${unitName})`;
@@ -788,20 +999,18 @@
       });
 
       socket.on('connect_error', (err) => {
-        console.warn('[Socket] Erro ao conectar no servidor:', err ? err.message : err);
-        if (connStatusText && (!socket || !socket.connected)) {
-          connStatusText.textContent = '🔴 Servidor Offline / Reconectando...';
+        console.warn('Erro ao conectar no servidor:', err);
+        if (connStatusText) {
+          connStatusText.textContent = '🔴 Servidor Offline / Erro';
           connStatusText.style.color = '#ef4444';
         }
-        if (statusDot && (!socket || !socket.connected)) {
+        if (statusDot) {
           statusDot.style.background = '#ef4444';
           statusDot.style.boxShadow = '0 0 10px #ef4444';
         }
       });
 
-      socket.on('disconnect', (reason) => {
-        console.log('[Socket] Desconectado:', reason);
-        if (reason === 'io client disconnect') return;
+      socket.on('disconnect', () => {
         if (connStatusText) {
           connStatusText.textContent = '🟡 Reconectando...';
           connStatusText.style.color = '#f59e0b';
@@ -832,76 +1041,48 @@
         }
       });
 
-      let lastIncomingCallTime = 0;
-      // RECEBE CHAMADA DO PORTÃO
+      // RECEBE CHAMADA: SÓ TOCA SE FOR PARA A SUA UNIDADE/CASA!
       socket.on('incoming-call', (callData) => {
-        const now = Date.now();
-        if (currentIncomingCall && (now - lastIncomingCallTime < 4000)) {
-          console.log('[Chamada Duplicada Ignorada por Debounce]');
-          return;
-        }
-        lastIncomingCallTime = now;
         console.log('[🔔 EVENTO incoming-call RECEBIDO!]', callData);
 
         if (!currentResident) {
-          const savedResident = localStorage.getItem(STORAGE_RESIDENT);
-          if (savedResident) {
-            try { currentResident = JSON.parse(savedResident); } catch(e) {}
-          }
-        }
-        if (!currentResident) {
           currentResident = {
-            id: 'usr_admin_1',
-            name: 'Administradora',
+            id: 'admin_1',
+            name: 'Proprietário',
             unit: 'Casa 1',
-            isAdmin: true,
-            role: 'admin'
+            isAdmin: true
           };
         }
 
-        const myId = (currentResident.id || '').trim().toLowerCase();
         const myUnit = (currentResident.unit || 'Casa 1').trim().toLowerCase();
-        const myName = (currentResident.name || '').trim().toLowerCase();
-        const isAdmin = (currentResident.role === 'admin' || currentResident.isAdmin);
-
-        const targetId = (callData.targetResidentId || '').trim().toLowerCase();
         const targetUnit = (callData.targetUnit || '').trim().toLowerCase();
-        const targetName = (callData.targetName || '').trim().toLowerCase();
-        const targetRole = (callData.targetRole || '').trim().toLowerCase();
 
-        const isGeneral = !targetUnit || targetUnit === 'geral' || targetId === 'geral';
-        const isMatchId = targetId && myId && (myId === targetId || myId.includes(targetId) || targetId.includes(myId));
-        const isMatchUnit = targetUnit && myUnit && (myUnit === targetUnit || myUnit.includes(targetUnit) || targetUnit.includes(myUnit));
-        const isMatchName = targetName && myName && (myName === targetName || myName.includes(targetName) || targetName.includes(myName));
-        const isMatchAdmin = (targetRole === 'admin' && isAdmin);
+        // Se houver mais de um morador cadastrado no condomínio E a chamada for direcionada a outra casa:
+        if (targetUnit && allResidentsList && allResidentsList.length > 1) {
+          const isTargetResident = callData.targetResidentId && callData.targetResidentId === currentResident.id;
+          const isTargetUnit = targetUnit === myUnit || targetUnit.includes(myUnit) || myUnit.includes(targetUnit);
 
-        let shouldRing = false;
-
-        // Se a chamada é geral, ou se combina com ID, unidade, nome ou se foi para Administradora:
-        if (isGeneral || isMatchId || isMatchUnit || isMatchName || isMatchAdmin) {
-          shouldRing = true;
-        } else if (!allResidentsList || allResidentsList.length <= 1) {
-          shouldRing = true;
-        } else if (isAdmin && (!targetUnit || targetUnit === 'casa 1')) {
-          shouldRing = true;
-        }
-
-        if (!shouldRing) {
-          console.log(`[Chamada Ignorada] Chamada destinada para: ${callData.targetUnit} (${callData.targetName}). Este aparelho é: ${currentResident.unit} (${currentResident.name})`);
-          return;
+          // Se a chamada foi especificamente para outro vizinho, não toca neste
+          if (!isTargetResident && !isTargetUnit) {
+            console.log(`[Chamada Ignorada] Chamada para ${callData.targetUnit}, este aparelho é ${currentResident.unit}`);
+            return;
+          }
         }
 
         console.log('[🔔 TOCANDO A CAMPAINHA NO APARELHO!]', callData);
         currentIncomingCall = callData;
 
-        // Dispara o toque sonoro e vibração do celular
+        // Dispara o toque sonoro e vibração do celular em tela cheia
         Android.playDoorbellRingtone();
 
-        const unitDisplay = callData.targetUnit || currentResident.unit || 'Minha Casa';
-        const nameDisplay = callData.targetName || currentResident.name || 'Morador';
-        incomingTargetBadge.textContent = `CHAMADA PARA: ${unitDisplay.toUpperCase()} (${nameDisplay})`;
-        incomingAddress.textContent = config.address || 'Portão Residencial';
-        incomingTime.textContent = new Date().toLocaleTimeString('pt-BR');
+        const unitDisplay = currentResident.unit || 'Casa 1';
+        const nameDisplay = currentResident.name || 'Proprietário(a)';
+        const addressDisplay = config.address || 'Rua Principal, 123';
+
+        if (incomingHouseUnit) incomingHouseUnit.textContent = unitDisplay.toUpperCase();
+        if (incomingOwnerName) incomingOwnerName.textContent = nameDisplay;
+        if (incomingAddress) incomingAddress.textContent = addressDisplay;
+        if (incomingTime) incomingTime.textContent = new Date().toLocaleTimeString('pt-BR');
 
         switchScreen('incoming');
       });
@@ -929,55 +1110,28 @@
       socket.on('webrtc-offer', async ({ offer, from }) => {
         try {
           if (!peerConnection) await createPeerConnection();
-          if (localStream) {
-            localStream.getTracks().forEach(track => {
-              const senders = peerConnection.getSenders();
-              if (!senders.some(s => s.track === track)) {
-                peerConnection.addTrack(track, localStream);
-              }
-            });
-          }
           await peerConnection.setRemoteDescription(new RTCSessionDescription(offer));
-          flushQueuedIceCandidates();
           const answer = await peerConnection.createAnswer();
           await peerConnection.setLocalDescription(answer);
           socket.emit('webrtc-answer', { doorbellId: config.doorbellId, answer, to: from });
-        } catch (e) {
-          console.error('Erro ao responder webrtc-offer:', e);
-        }
+        } catch (e) {}
       });
 
       socket.on('webrtc-answer', async ({ answer }) => {
         try {
           if (peerConnection) {
             await peerConnection.setRemoteDescription(new RTCSessionDescription(answer));
-            flushQueuedIceCandidates();
           }
-        } catch (e) {
-          console.error('Erro ao processar webrtc-answer:', e);
-        }
+        } catch (e) {}
       });
 
       socket.on('webrtc-ice-candidate', async ({ candidate }) => {
         try {
-          if (!candidate) return;
-          if (peerConnection && peerConnection.remoteDescription) {
+          if (peerConnection && candidate) {
             await peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
-          } else {
-            queuedIceCandidates.push(candidate);
           }
-        } catch (e) {
-          console.warn('Erro ao adicionar candidato ICE:', e);
-        }
+        } catch (e) {}
       });
-
-      function flushQueuedIceCandidates() {
-        if (!peerConnection || !peerConnection.remoteDescription) return;
-        while (queuedIceCandidates.length > 0) {
-          const c = queuedIceCandidates.shift();
-          peerConnection.addIceCandidate(new RTCIceCandidate(c)).catch(() => {});
-        }
-      }
 
       socket.on('remote-video-state-changed', ({ isVideoActive }) => {
         if (isVideoActive) {
@@ -1053,11 +1207,13 @@
     } catch(e) {}
   }
 
-  // Renderizar lista de usuários com cargos RBAC
+  // Renderizar lista de usuários com cargos RBAC e Códigos de Acesso para Admin
   function renderResidentsManager() {
     if (!residentsManagerList) return;
     residentsManagerList.innerHTML = '';
     if (dashResidentsList) dashResidentsList.innerHTML = '';
+
+    const isAdmin = currentResident && (currentResident.role === 'admin' || currentResident.isAdmin);
 
     allResidentsList.forEach(res => {
       const isAdminUser = (res.role === 'admin' || res.isAdmin);
@@ -1065,12 +1221,32 @@
         ? '<span class="badge-role-admin">👑 Admin</span>'
         : '<span class="badge-role-user">👤 Convidado</span>';
 
-      const avatarHtml = res.photo
-        ? `<img class="resident-mgr-avatar" src="${res.photo}" alt="${res.name}">`
+      // Se for o próprio usuário atual e tiver foto no perfil, usa a foto dele
+      let photoToUse = res.photo;
+      if (currentResident && (res.id === currentResident.id || res.name === currentResident.name) && currentResident.photo) {
+        photoToUse = currentResident.photo;
+      }
+
+      const avatarHtml = photoToUse
+        ? `<img class="resident-mgr-avatar" src="${photoToUse}" alt="${res.name}">`
         : `<div class="resident-mgr-avatar">${res.name.charAt(0).toUpperCase()}</div>`;
 
+      // Se for Administradora, exibe código de acesso com botão de cópia com 1 clique e botão de editar
+      let codeBoxHtml = '';
+      if (isAdmin) {
+        const userCode = res.access_code || res.code || (isAdminUser ? MASTER_CODE : '—');
+        codeBoxHtml = `
+          <div class="resident-code-box">
+            <span class="resident-code-label">Código:</span>
+            <span class="resident-code-val">${userCode}</span>
+            <button type="button" class="btn-code-copy" data-code="${userCode}" title="Copiar código de acesso">📋 Copiar</button>
+            <button type="button" class="btn-code-edit" data-id="${res.id}" data-name="${res.name}" data-unit="${res.unit}" data-code="${userCode === '—' ? '' : userCode}" title="Personalizar código de acesso">✏️ Personalizar</button>
+          </div>
+        `;
+      }
+
       // Botão Remover SÓ APARECE PARA A ADMINISTRADORA E NUNCA PARA ELA PRÓPRIA
-      const removeBtnHtml = (currentResident && currentResident.isAdmin && !isAdminUser && res.id !== currentResident.id)
+      const removeBtnHtml = (isAdmin && !isAdminUser && res.id !== currentResident.id)
         ? `<button class="btn-remove-resident" data-id="${res.id}">Remover</button>`
         : '';
 
@@ -1079,11 +1255,12 @@
       item.innerHTML = `
         <div class="resident-mgr-left">
           ${avatarHtml}
-          <div>
+          <div style="flex:1;">
             <div class="resident-mgr-name" style="display:flex; align-items:center; gap:6px;">
               ${res.name} ${roleBadgeHtml}
             </div>
             <div class="resident-mgr-unit">${res.unit} ${res.email ? '• ' + res.email : ''}</div>
+            ${codeBoxHtml}
           </div>
         </div>
         ${removeBtnHtml}
@@ -1106,6 +1283,38 @@
         `;
         dashResidentsList.appendChild(dashItem);
       }
+    });
+
+    // Copiar código do morador com 1 toque
+    document.querySelectorAll('.btn-code-copy').forEach(btn => {
+      btn.addEventListener('click', async (e) => {
+        const code = e.currentTarget.getAttribute('data-code');
+        if (code && code !== '—') {
+          await Android.copyToClipboard(code);
+          const origText = e.currentTarget.textContent;
+          e.currentTarget.textContent = '✓ Copiado!';
+          e.currentTarget.style.color = '#4ade80';
+          setTimeout(() => {
+            e.currentTarget.textContent = origText;
+            e.currentTarget.style.color = '';
+          }, 1500);
+        }
+      });
+    });
+
+    // Editar / Personalizar código de acesso do morador
+    document.querySelectorAll('.btn-code-edit').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        const id = e.currentTarget.getAttribute('data-id');
+        const name = e.currentTarget.getAttribute('data-name');
+        const unit = e.currentTarget.getAttribute('data-unit');
+        const code = e.currentTarget.getAttribute('data-code');
+
+        editingResidentId = id;
+        if (editCodeResidentInfo) editCodeResidentInfo.textContent = `${name} (${unit || ''})`;
+        if (inputCustomAccessCode) inputCustomAccessCode.value = (code && code !== MASTER_CODE) ? code : '';
+        if (modalEditAccessCode) modalEditAccessCode.classList.add('open');
+      });
     });
 
     // Adiciona listener nos botões de remover
@@ -1273,17 +1482,23 @@
     }
   }
 
-  // 10. Atender Chamada (VIVA-VOZ ATIVO POR PADRÃO)
+  // 10. Atender Chamada (VOZ E VÍDEO INICIAM ATIVOS + VIVA-VOZ ATIVO POR PADRÃO)
   async function answerCall() {
     Android.stopDoorbellRingtone();
     switchScreen('incall');
     startCallTimer();
 
-    // Viva-voz ativado automaticamente
+    // 1. Viva-voz ativado automaticamente
     isSpeakerOn = true;
     Android.setSpeakerphoneOn(true);
     btnOwnerToggleSpeaker.classList.add('active');
     labelOwnerSpeaker.textContent = 'Viva-Voz';
+
+    // 2. Destaca Unidade e Morador em fonte grande na chamada ativa
+    const unitDisplay = (currentResident && currentResident.unit) ? currentResident.unit : 'CASA 1';
+    const nameDisplay = (currentResident && currentResident.name) ? currentResident.name : 'Proprietário(a)';
+    if (inCallTargetHouse) inCallTargetHouse.textContent = unitDisplay.toUpperCase();
+    if (inCallTargetOwner) inCallTargetOwner.textContent = nameDisplay;
 
     socket.emit('answer-call', {
       doorbellId: config.doorbellId,
@@ -1291,6 +1506,7 @@
       residentInfo: currentResident
     });
 
+    // 3. Inicia chamada com VOZ E VÍDEO ATIVOS AUTOMATICAMENTE
     try {
       localStream = await navigator.mediaDevices.getUserMedia({
         audio: {
@@ -1298,32 +1514,72 @@
           noiseSuppression: true,
           autoGainControl: true
         },
-        video: false
-      });
-
-      localAudioTrack = localStream.getAudioTracks()[0];
-      await createPeerConnection();
-
-      localStream.getTracks().forEach(track => {
-        const senders = peerConnection.getSenders();
-        if (!senders.some(s => s.track === track)) {
-          peerConnection.addTrack(track, localStream);
+        video: {
+          facingMode: 'user',
+          width: { ideal: 640 },
+          height: { ideal: 480 }
         }
       });
 
-      // Se a oferta do visitante já chegou enquanto o morador atendia:
-      if (peerConnection.signalingState === 'have-remote-offer') {
-        const answer = await peerConnection.createAnswer();
-        await peerConnection.setLocalDescription(answer);
-        socket.emit('webrtc-answer', {
-          doorbellId: config.doorbellId,
-          answer,
-          to: currentIncomingCall ? currentIncomingCall.from : null
-        });
+      isVideoEnabled = true;
+      localVideoTrack = localStream.getVideoTracks()[0];
+      if (localVideoTrack) {
+        ownerLocalVideo.srcObject = new MediaStream([localVideoTrack]);
+        ownerLocalVideoContainer.classList.remove('hidden');
+        btnOwnerToggleVideo.classList.add('video-on');
+        labelOwnerVideo.textContent = 'Desligar Câmera';
       }
+    } catch (errVideo) {
+      console.warn('Vídeo indisponível ou negado no morador, iniciando somente áudio:', errVideo);
+      try {
+        localStream = await navigator.mediaDevices.getUserMedia({
+          audio: {
+            echoCancellation: true,
+            noiseSuppression: true,
+            autoGainControl: true
+          },
+          video: false
+        });
+        isVideoEnabled = false;
+        localVideoTrack = null;
+        ownerLocalVideoContainer.classList.add('hidden');
+        btnOwnerToggleVideo.classList.remove('video-on');
+        labelOwnerVideo.textContent = 'Ligar Vídeo';
+      } catch (errAudio) {
+        alert('Permissão de microfone necessária para falar com o visitante.');
+        return;
+      }
+    }
 
-    } catch (err) {
-      alert('Permissão de microfone necessária para falar com o visitante.');
+    localAudioTrack = localStream.getAudioTracks()[0];
+    isMicMuted = false;
+    btnOwnerToggleMic.classList.remove('muted');
+    labelOwnerMic.textContent = 'Microfone';
+
+    await createPeerConnection();
+
+    localStream.getTracks().forEach(track => {
+      peerConnection.addTrack(track, localStream);
+    });
+
+    const offer = await peerConnection.createOffer({
+      offerToReceiveAudio: true,
+      offerToReceiveVideo: true
+    });
+    await peerConnection.setLocalDescription(offer);
+
+    socket.emit('webrtc-offer', {
+      doorbellId: config.doorbellId,
+      offer,
+      to: currentIncomingCall ? currentIncomingCall.from : null
+    });
+
+    if (isVideoEnabled) {
+      socket.emit('video-state-changed', {
+        doorbellId: config.doorbellId,
+        isVideoActive: true,
+        to: currentIncomingCall ? currentIncomingCall.from : null
+      });
     }
   }
 
@@ -1510,7 +1766,6 @@
     btnOwnerToggleVideo.classList.remove('video-on');
     labelOwnerVideo.textContent = 'Ligar Vídeo';
     currentIncomingCall = null;
-    queuedIceCandidates = [];
   }
 
   // Gravação Automática de Chamadas para a Administradora (Áudio e Vídeo no armazenamento local)
@@ -1522,11 +1777,34 @@
     try {
       callRecordedChunks = [];
       const recordStream = new MediaStream();
-      remoteStream.getAudioTracks().forEach(t => recordStream.addTrack(t));
 
-      const videoTracks = remoteStream.getVideoTracks();
-      if (videoTracks.length > 0) {
-        recordStream.addTrack(videoTracks[0]);
+      // Mix de áudio remoto e local com AudioContext
+      try {
+        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        const dest = audioCtx.createMediaStreamDestination();
+        if (remoteStream && remoteStream.getAudioTracks().length > 0) {
+          const remoteSource = audioCtx.createMediaStreamSource(remoteStream);
+          remoteSource.connect(dest);
+        }
+        if (localStream && localStream.getAudioTracks().length > 0) {
+          const localSource = audioCtx.createMediaStreamSource(localStream);
+          localSource.connect(dest);
+        }
+        dest.stream.getAudioTracks().forEach(t => recordStream.addTrack(t));
+      } catch(mixErr) {
+        if (remoteStream) {
+          remoteStream.getAudioTracks().forEach(t => recordStream.addTrack(t));
+        }
+      }
+
+      // Adiciona vídeo se disponível (remoto ou local)
+      const remoteVideo = remoteStream ? remoteStream.getVideoTracks() : [];
+      const localVideo = localStream ? localStream.getVideoTracks() : [];
+      if (remoteVideo.length > 0) {
+        recordStream.addTrack(remoteVideo[0]);
+        callRecordIsVideo = true;
+      } else if (localVideo.length > 0) {
+        recordStream.addTrack(localVideo[0]);
         callRecordIsVideo = true;
       } else {
         callRecordIsVideo = false;
@@ -1634,9 +1912,12 @@
   btnTestRing.addEventListener('click', () => {
     currentIncomingCall = { from: 'teste-local', timestamp: Date.now(), targetUnit: currentResident.unit };
     Android.playDoorbellRingtone();
-    incomingTargetBadge.textContent = `CHAMADA PARA: ${currentResident.unit.toUpperCase()} (${currentResident.name})`;
-    incomingAddress.textContent = config.address;
-    incomingTime.textContent = new Date().toLocaleTimeString('pt-BR');
+    const unitDisplay = (currentResident && currentResident.unit) ? currentResident.unit : 'Casa 1';
+    const nameDisplay = (currentResident && currentResident.name) ? currentResident.name : 'Proprietário(a)';
+    if (incomingHouseUnit) incomingHouseUnit.textContent = unitDisplay.toUpperCase();
+    if (incomingOwnerName) incomingOwnerName.textContent = nameDisplay;
+    if (incomingAddress) incomingAddress.textContent = config.address || 'Rua Principal, 123';
+    if (incomingTime) incomingTime.textContent = new Date().toLocaleTimeString('pt-BR');
     switchScreen('incoming');
   });
 
@@ -1681,49 +1962,61 @@
 
   // Suporte a Gesto e Botão Físico/Virtual de Voltar do Celular (Android Back Press)
   window.handleBackPress = function() {
-    // 1. Fecha modal de confirmação de saída se estiver aberto
+    // 1. Fecha menu hambúrguer se aberto
+    if (hamburgerDrawer && hamburgerDrawer.classList.contains('open')) {
+      closeHamburger();
+      return true;
+    }
+    // 2. Fecha modal de personalização de código se aberto
+    if (modalEditAccessCode && modalEditAccessCode.classList.contains('open')) {
+      modalEditAccessCode.classList.remove('open');
+      return true;
+    }
+    // 3. Fecha modal de confirmação de saída se estiver aberto
     if (modalConfirmLogout && modalConfirmLogout.classList.contains('open')) {
       modalConfirmLogout.classList.remove('open');
       return true;
     }
-    // 2. Fecha modal de moradores/convites se aberto
+    // 4. Fecha modal de moradores/convites se aberto
     if (modalResidents && modalResidents.classList.contains('open')) {
       modalResidents.classList.remove('open');
       return true;
     }
-    // 3. Fecha modal de placa do QR Code se aberto
+    // 5. Fecha modal de placa do QR Code se aberto
     if (modalSign && modalSign.classList.contains('open')) {
       modalSign.classList.remove('open');
       return true;
     }
-    // 4. Fecha modal de configurações do portão se aberto
+    // 6. Fecha modal de configurações do portão se aberto
     if (modalConfig && modalConfig.classList.contains('open')) {
       modalConfig.classList.remove('open');
       return true;
     }
-    // 5. Se estiver na tela de editar perfil e já tiver conta logada, volta pro Dashboard
+    // 7. Se estiver na tela de editar perfil e já tiver conta logada, volta pro Dashboard
     if (viewProfileSetup && viewProfileSetup.classList.contains('active')) {
       if (currentResident && (currentResident.id || currentResident.name)) {
         switchScreen('dashboard');
         return true;
       }
     }
-    // 6. Se estiver na tela de chamada tocando, rejeita
+    // 8. Se estiver na tela de chamada tocando, rejeita
     if (viewIncomingCall && viewIncomingCall.classList.contains('active')) {
       rejectCall();
       return true;
     }
-    // 7. Se estiver em chamada ativa, encerra chamada
+    // 9. Se estiver em chamada ativa, encerra chamada
     if (viewInCall && viewInCall.classList.contains('active')) {
       endCall();
       return true;
     }
-    // Retorna false para permitir que o Android minimize o app em segundo plano
+    // Retorna false para permitir que o Android minimize o app em segundo plano mantendo a recepção de chamadas
     return false;
   };
 
-  // Inicialização do Aplicativo
+  // Inicialização do Aplicativo e Tema
+  initTheme();
   checkServerUpdate();
+
   // Se o usuário (Administradora ou Usuário Padrão) já estiver logado, entra DIRETO no Dashboard!
   if (currentResident && (currentResident.id || currentResident.name)) {
     renderDashboard();

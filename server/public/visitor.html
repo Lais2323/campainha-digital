@@ -48,10 +48,11 @@
       </div>
     </main>
 
-    <!-- ESTADO 1: CHAMANDO O MORADOR ESCOLHIDO -->
-    <main id="stateCalling" class="state-view">
-      <div class="calling-container">
-        
+    <!-- ESTADO 1: TELA DE CHAMADA (DO CLIQUE DE LIGAR ATÉ O TÉRMINO) -->
+    <main id="stateCall" class="state-view">
+      
+      <!-- SUB-FASE: CHAMANDO / TOCANDO NO CELULAR -->
+      <div id="callingSection" class="calling-section">
         <div class="radar-box">
           <div class="radar-circle c1"></div>
           <div class="radar-circle c2"></div>
@@ -72,30 +73,16 @@
         <p id="callingNotice" class="calling-subtitle">
           Aguarde. O celular específico deste morador está tocando agora.
         </p>
-
-        <div class="calling-actions">
-          <button id="btnCancelCall" class="btn-circle btn-cancel" title="Cancelar">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-              <line x1="18" y1="6" x2="6" y2="18"></line>
-              <line x1="6" y1="6" x2="18" y2="18"></line>
-            </svg>
-          </button>
-          <span>Cancelar Chamada</span>
-        </div>
-
       </div>
-    </main>
 
-    <!-- ESTADO 2: CHAMADA CONECTADA (EM ANDAMENTO) -->
-    <main id="stateInCall" class="state-view">
-      <div class="call-stage">
-        
-        <!-- VÍDEO DO MORADOR (REMOTO) -->
+      <!-- SUB-FASE: EM CHAMADA CONECTADA (CONVERSANDO) -->
+      <div id="inCallSection" class="incall-section hidden">
+        <!-- VÍDEO DO MORADOR (REMOTO, QUANDO ELE LIGA A CÂMERA DELE) -->
         <div id="remoteVideoContainer" class="video-container-remote hidden">
           <video id="remoteVideo" autoplay playsinline></video>
         </div>
 
-        <!-- VISUALIZADOR DE VOZ (SOMENTE VOZ POR PADRÃO) -->
+        <!-- VISUALIZADOR DE VOZ DO MORADOR -->
         <div id="voiceOnlyContainer" class="voice-only-stage">
           <div class="avatar-speaker">
             <div id="connectedResidentAvatar" class="avatar-circle">
@@ -118,25 +105,25 @@
             <span id="inCallBadgeText">CONVERSANDO COM O MORADOR</span>
           </div>
           <div id="callTimer" class="call-timer">00:00</div>
-          <p class="voice-notice">Áudio ativo por padrão. Câmera desligada.</p>
+          <p class="voice-notice">Áudio ativo em viva-voz</p>
         </div>
-
-        <!-- MINIATURA DA CÂMERA DO ENTREGADOR (LOCAL) -->
-        <div id="localVideoContainer" class="video-container-local hidden">
-          <video id="localVideo" autoplay playsinline muted></video>
-        </div>
-
       </div>
 
-      <!-- ÁUDIO DO MORADOR -->
+      <!-- MINIATURA DA CÂMERA DO ENTREGADOR (LOCAL - ATIVA POR PADRÃO DESDE O INÍCIO) -->
+      <div id="localVideoContainer" class="video-container-local">
+        <video id="localVideo" autoplay playsinline muted></video>
+        <span class="local-cam-tag">Sua Câmera</span>
+      </div>
+
+      <!-- ÁUDIO REMOTO DO MORADOR -->
       <audio id="remoteAudio" autoplay></audio>
 
-      <!-- RODA-PÉ DA CHAMADA -->
+      <!-- RODA-PÉ COM CONTROLES DE MÍDIA (MICROFONE, VIVA-VOZ, CÂMERA, ENCERRAR) -->
       <footer class="call-footer">
         <div class="footer-controls">
           
-          <!-- MUTAR MICROFONE -->
-          <button id="btnToggleMic" class="ctrl-btn active" title="Microfone">
+          <!-- BOTAO 1: MUTAR / DESMUTAR MICROFONE (LIGADO POR PADRÃO) -->
+          <button id="btnToggleMic" class="ctrl-btn active" title="Alternar Microfone">
             <div class="ctrl-icon-box">
               <svg class="icon-mic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path>
@@ -145,13 +132,13 @@
                 <line x1="8" y1="23" x2="16" y2="23"></line>
               </svg>
             </div>
-            <span id="labelMic">Voz Ativa</span>
+            <span id="labelMic">Microfone</span>
           </button>
 
-          <!-- VIVA-VOZ -->
-          <button id="btnToggleSpeaker" class="ctrl-btn active" title="Viva-Voz">
+          <!-- BOTAO 2: VIVA-VOZ (LIGADO POR PADRÃO) -->
+          <button id="btnToggleSpeaker" class="ctrl-btn active" title="Alternar Viva-Voz">
             <div class="ctrl-icon-box">
-              <svg class="icon-speaker" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon>
                 <path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"></path>
               </svg>
@@ -159,19 +146,19 @@
             <span id="labelSpeaker">Viva-Voz</span>
           </button>
 
-          <!-- ATIVAR VÍDEO -->
-          <button id="btnToggleVideo" class="ctrl-btn btn-video" title="Ligar Vídeo">
+          <!-- BOTAO 3: LIGAR / DESLIGAR CÂMERA (LIGADO POR PADRÃO PARA ENTREGADOR) -->
+          <button id="btnToggleVideo" class="ctrl-btn btn-video video-on active" title="Ligar/Desligar Vídeo">
             <div class="ctrl-icon-box">
               <svg class="icon-cam" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <polygon points="23 7 16 12 23 17 23 7"></polygon>
                 <rect x="1" y="5" width="15" height="14" rx="2" ry="2"></rect>
               </svg>
             </div>
-            <span id="labelVideo">Ativar Vídeo</span>
+            <span id="labelVideo">Câmera</span>
           </button>
 
-          <!-- ENCERRAR -->
-          <button id="btnEndCall" class="ctrl-btn btn-hangup" title="Desligar">
+          <!-- BOTAO 4: ENCERRAR CHAMADA -->
+          <button id="btnEndCall" class="ctrl-btn btn-hangup" title="Desligar Chamada">
             <div class="ctrl-icon-box hangup-box">
               <svg viewBox="0 0 24 24" fill="currentColor">
                 <path d="M12 9c-1.6 0-3.15.25-4.6.72v3.1c0 .39-.23.74-.56.9-.98.49-1.87 1.12-2.66 1.85-.18.18-.43.28-.7.28-.28 0-.53-.11-.71-.29L.29 13.08c-.18-.17-.29-.42-.29-.7 0-.28.11-.53.29-.71C3.34 8.78 7.46 7 12 7s8.66 1.78 11.71 4.67c.18.18.29.43.29.71 0 .28-.11.53-.29.71l-2.48 2.48c-.18.18-.43.29-.71.29-.27 0-.52-.11-.7-.28-.79-.74-1.69-1.36-2.67-1.85-.33-.16-.56-.5-.56-.9v-3.1C15.15 9.25 13.6 9 12 9z"/>
@@ -184,7 +171,7 @@
       </footer>
     </main>
 
-    <!-- ESTADO 3: FINALIZADA -->
+    <!-- ESTADO 2: FINALIZADA -->
     <main id="stateEnded" class="state-view">
       <div class="ended-card">
         <div class="ended-icon">

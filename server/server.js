@@ -149,7 +149,7 @@ app.post('/api/admin/invite', (req, res) => {
   res.json(result);
 });
 
-// 4. Listar Usuários e Convites (Apenas Administradora)
+// 4. Listar Usuários e Convites com Códigos de Acesso (Apenas Administradora)
 app.get('/api/admin/users', (req, res) => {
   const adminCode = req.query.adminCode || req.headers['x-admin-code'];
   if (adminCode !== MASTER_ACCESS_CODE) {
@@ -161,9 +161,30 @@ app.get('/api/admin/users', (req, res) => {
 
   res.json({
     success: true,
-    users: Database.getAllUsers(),
+    users: Database.getAllUsers(true), // Envia os códigos de acesso dos moradores para a Administradora
     invites: Database.getAllInvites()
   });
+});
+
+// 4.1 Personalizar Código de Acesso do Morador (Apenas Administradora)
+app.post('/api/admin/users/:id/code', (req, res) => {
+  const adminCode = req.body.adminCode || req.headers['x-admin-code'];
+  if (adminCode !== MASTER_ACCESS_CODE) {
+    return res.status(403).json({
+      success: false,
+      error: 'Acesso negado. Apenas a Administradora pode alterar os códigos de acesso.'
+    });
+  }
+
+  const { newCode } = req.body;
+  const result = Database.updateUserAccessCode(req.params.id, newCode);
+  if (!result.success) {
+    return res.status(400).json(result);
+  }
+
+  // Notifica os moradores conectados
+  io.to('doorbell:minha-casa').emit('residents-updated', Database.getAllUsers(false));
+  res.json(result);
 });
 
 // 5. Excluir Usuário (Apenas Administradora - protegido contra exclusão da própria admin)
@@ -305,10 +326,10 @@ app.get('/download', (req, res) => {
 // Verificação de versão atualizada
 app.get('/api/version', (req, res) => {
   res.json({
-    versionName: '2.5.0',
-    versionCode: 7,
+    versionName: '2.6.0',
+    versionCode: 8,
     downloadUrl: '/download',
-    changelog: 'Correção de inicialização, conexão offline garantida e estabilidade da campainha'
+    changelog: 'Controles de mídia para entregador (microfone, viva-voz, câmera, encerrar) e morador iniciando com áudio e viva-voz'
   });
 });
 
@@ -381,8 +402,8 @@ io.on('connection', (socket) => {
     });
 
     const config = Database.getDoorbellConfig(doorbellId);
-    const residents = Database.getAllUsers();
-    socket.emit('registered', { role: 'resident', config: { ...config, residents } });
+    const residents = Database.getAllUsers(socket.role === 'admin');
+    socket.emit('registered', { role: 'resident', config: { ...config, residents }, residents });
     console.log(`[Morador Registrado] ${resident ? resident.name : 'Anônimo'} (${resident ? resident.unit : 'Geral'}) [Cargo: ${socket.role}] | ID: ${doorbellId}`);
   });
 
